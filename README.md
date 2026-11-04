@@ -258,6 +258,50 @@ The page loads Three.js and the Colyseus client from the jsDelivr CDN, so the br
 
 The game server also serves the page itself at http://localhost:2567, so `npm run client` is optional. Once hosted, just open your domain. To point a local page at a hosted server instead: `http://localhost:5173/?server=wss://your-server.com`.
 
+## Credits and the shop
+
+FestiVille has its own currency, **credits** (🪙). Every new player starts with **500**. Tap the 🪙 button in the game to open the **Shop**.
+
+**Earning credits:** side quests pay credits as well as badges. You get the full reward the first time and a smaller one for repeats. Repeats stop paying after 300 credits a day, so quests can't be farmed.
+
+| Quest | First time | Repeats |
+|---|---|---|
+| Lost & Found | 150 | 40 |
+| Soundcheck | 250 | 70 |
+| Vendor Rush | 200 | 60 |
+
+**Spending credits:**
+
+- **⛺ Camp.** Claim your own spot in the Campground: walk to where you want it, pick a size and claim it. A green outline shows your spot fits, and a red one comes with the reason it doesn't. Spots are **10×10** (200), **10×20** (450) and **20×20** (900); upgrading pays the difference. Every camp comes with a dome tent. Buy more for it, then **Set up** or **Pack away** each item:
+  - everyday items: chairs, cooler, fire pit, shade canopy, hammock, bell tent, string lights, flag
+  - **featured** items: a **PA system**, a **laser rig**, a **neon sign** with your name, and a **disco ball**
+
+  Ground items need space in your spot, so bigger spots hold more. Lights, flags and signs go around the edge. Everyone sees your camp, even while you're offline. **Move camp here** moves it for free; **Give back spot** frees it with no refund, and you keep your items.
+- **🕶️ Wear.** Premium things to wear around the festival: festival totem, shutter shades, heart glasses, top hat, halo, fairy wings. Once you own one, put it on from 👕.
+- **🧍 Looks.** Premium characters and character parts.
+- **🪙 Credits.** How to earn credits, and the credit packs. Buying packs with real money is **not open yet**. The packs and the server hook (`grantPack` in `server/shop.js`) are ready for a payment provider; until one is connected, give credits from the command line:
+
+```bash
+npm run account -- credits <username>                 # balance and recent history
+npm run account -- credits <username> +500 bought a pack
+npm run account -- credits <username> -200 refund
+npm run account -- camp-release <username>            # take back a camp spot (no refund)
+```
+
+**How it's kept honest:** balances only change on the server, and the browser only asks. Every credit earned or spent is a line in `data/credits-ledger.jsonl`: who, how much, the new balance, and why (`quest:soundcheck`, `buy:totem`, `camp:plot_10x10`, `console: …`). Camps are saved in `data/camps.json`.
+
+**Changing prices or adding things:** everything is in `shared/economy.js`:
+
+- starting credits, quest rewards and the daily cap
+- credit packs
+- camp spot sizes and prices
+- camp items
+- `UNLOCK_PRICES` for premium wearables and looks
+
+A new camp item also needs its 3D shape in `buildItem()` in `client/camps.js`. A new wearable needs an entry in `shared/accessories.js` and a shape in `client/accessories.js`.
+
+**Later:** promotional ad space for businesses (sponsored signs, banners and featured vendor spots) is planned as another thing credits can buy. It will reuse the same wallet and ledger.
+
 ## Adding characters
 
 Players have two ways to look:
@@ -313,7 +357,7 @@ The code works without any part files. If a body's `body.glb` is missing, player
 Each character has `tier: "free"` or `tier: "premium"` in `shared/characters.js`. Premium is cosmetic only: everyone can walk around, hang out, crew up and do quests no matter what they look like.
 
 - The picker shows premium looks with a lock note. Players can preview them, but the **server** decides who actually gets one (`server/entitlements.js`), so it can't be unlocked by tinkering in the browser.
-- Premium looks, accessories and character parts are unlocked **per account**: `npm run account -- unlock <username> <id>` (e.g. `bigvegas`, `wings`, `hair_afro`) (there are no payments yet, so this is how you grant one; a payment would later call the same thing). To unlock everything while testing, start the server with `FV_UNLOCK_ALL=1 npm start` (Windows: `set FV_UNLOCK_ALL=1 && npm start`).
+- Premium looks, accessories and character parts are unlocked **per account**: bought with credits in the 🪙 Shop, or granted with `npm run account -- unlock <username> <id>` (e.g. `bigvegas`, `wings`, `hair_afro`) (there are no payments yet, so this is how you grant one; a payment would later call the same thing). To unlock everything while testing, start the server with `FV_UNLOCK_ALL=1 npm start` (Windows: `set FV_UNLOCK_ALL=1 && npm start`).
 - When payments come, `server/entitlements.js` is the one place to check a player's purchases (`canUseLook()`, `canUseAccessory()`, `canUsePart()`).
 
 ### Accessories
@@ -321,7 +365,7 @@ Each character has `tier: "free"` or `tier: "premium"` in `shared/characters.js`
 Players can top any character with cosmetic accessories on the join screen — tap the chips under **Accessories**. They animate with the character and everyone sees them. One per slot (head, face, back, hand); picking a second in a slot swaps it.
 
 - **Free:** baseball cap, flower crown, sunglasses, glow stick.
-- **Premium:** top hat, halo, heart glasses, fairy wings — unlocked per account, the same way as premium characters:
+- **Premium:** top hat, halo, heart glasses, shutter shades, festival totem, fairy wings. Buy them with credits in the 🪙 Shop, or unlock them per account the same way as premium characters:
   ```bash
   npm run account -- unlock <username> wings      # also: tophat, halo, heartglasses
   ```

@@ -12,6 +12,9 @@ import { setupReports } from "./reports-ui.js";
 import { ACCESSORIES, SLOTS, accessoryById, normalizeAccessories } from "../shared/accessories.js";
 import { normalizeRecipe, partById, bodyById } from "../shared/parts.js";
 import { createLookBuilder, createPreview } from "./look-builder.js";
+import { setupCamps } from "./camps.js";
+import { setupShop } from "./shop-ui.js";
+import { UNLOCK_PRICES } from "../shared/economy.js";
 import { createCameraRig } from "./camera.js";
 import { applyLayout } from "../shared/venue.js";
 
@@ -215,7 +218,12 @@ function renderAccessories() {
     b.textContent = a.name;
     if (a.tier === "premium") { const lk = document.createElement("span"); lk.className = "lk"; lk.textContent = locked ? "🔒" : "★"; b.append(lk); }
     b.onclick = () => {
-      if (locked) { $("join-error").textContent = `${a.name} is a premium accessory. Unlock it with: npm run account -- unlock ${account?.username || "<you>"} ${a.id}`; return; }
+      if (locked) {
+        $("join-error").textContent = UNLOCK_PRICES[a.id] != null
+          ? `${a.name} is premium: ${UNLOCK_PRICES[a.id]} credits in the 🪙 Shop once you're in the festival.`
+          : `${a.name} is a premium accessory.`;
+        return;
+      }
       if (chosen.has(a.id)) chosen.delete(a.id);
       else { for (const id of [...chosen]) if (accessoryById(id)?.slot === a.slot) chosen.delete(id); chosen.add(a.id); }
       try { localStorage.setItem("fv-accessories", [...chosen].join(",")); } catch {}
@@ -231,6 +239,8 @@ let quests = null;
 let venue = null;
 let chat = null;
 let moderation = null;
+let camps = null;
+let shop = null;
 let removedText = "";   // why staff removed you, if they did
 // Add ?debug to the URL to poke at the game from the browser console (window.__gs).
 if (params.has("debug")) window.__gs = { THREE, scene, camera, get mp() { return mp; } };
@@ -350,6 +360,8 @@ $("join-form").addEventListener("submit", async (e) => {
     chat = setupChat({ THREE, mp, quests });
     moderation = setupModeration({ mp, quests, chat, account });
     setupReports({ mp, quests, isStaff: moderation.isStaff });
+    camps = setupCamps({ THREE, scene, mp });
+    shop = setupShop({ mp, toast: quests.toast, account, camps, me: () => mp.room.state.players.get(mp.room.sessionId) });
     const gotRecipe = mp.room.state.players.get(mp.room.sessionId)?.recipe ?? "";
     if (profile.recipe && gotRecipe !== normalizeRecipe(profile.recipe)) {
       // The server swapped premium parts this account hasn't unlocked (or doesn't know a part yet).
@@ -436,6 +448,8 @@ renderer.setAnimationLoop(() => {
     quests?.update(dt);
     venue?.update(dt);
     chat?.update(dt);
+    camps?.update(dt);
+    shop?.update(dt);
     moderation?.update();
     rig.update(dt, me.position);   // camera follows you; scroll / pinch / +/- to zoom
     $("hud-online").textContent = `${mp.onlineCount()} online`;

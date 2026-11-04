@@ -192,11 +192,12 @@ export class QuestSystem {
 
   // ---------- helpers ----------
   finish(crew, success, text) {
-    const q = QUESTS[crew.quest.id];
+    const questId = crew.quest.id;
+    const q = QUESTS[questId];
     crew.quest = null;
     if (success) {
       for (const m of crew.members) this.players.get(m)?.badges.add(q.badge);
-      this.emitCrew(crew, { type: "questDone", success: true, name: q.name, badge: q.badge });
+      this.emitCrew(crew, { type: "questDone", success: true, questId, name: q.name, badge: q.badge });
     } else {
       this.emitCrew(crew, { type: "questDone", success: false, name: q.name, text });
     }
