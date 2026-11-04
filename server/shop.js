@@ -48,8 +48,9 @@ export function rewardQuest(store, accountId, questId, now = Date.now()) {
   return out.error ? 0 : amount;
 }
 
-// A real-money credit pack was paid for. This is what a payment provider's webhook should call once
-// one is connected; paymentRef is the provider's payment id, so a webhook delivered twice only
+// A real-money credit pack was paid for. This is what the payment provider's webhook should call once
+// one is connected (planned: PayPal Business, on a PAYMENT.CAPTURE.COMPLETED event, with the capture
+// id as paymentRef). paymentRef is the provider's payment id, so a webhook delivered twice only
 // credits once. Returns { balance, credits } or { error }.
 export function grantPack(store, accountId, packId, paymentRef) {
   const pack = CREDIT_PACKS.find((p) => p.id === packId);

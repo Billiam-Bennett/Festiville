@@ -279,7 +279,7 @@ FestiVille has its own currency, **credits** (🪙). Every new player starts wit
   Ground items need space in your spot, so bigger spots hold more. Lights, flags and signs go around the edge. Everyone sees your camp, even while you're offline. **Move camp here** moves it for free; **Give back spot** frees it with no refund, and you keep your items.
 - **🕶️ Wear.** Premium things to wear around the festival: festival totem, shutter shades, heart glasses, top hat, halo, fairy wings. Once you own one, put it on from 👕.
 - **🧍 Looks.** Premium characters and character parts.
-- **🪙 Credits.** How to earn credits, and the credit packs. Buying packs with real money is **not open yet**. The packs and the server hook (`grantPack` in `server/shop.js`) are ready for a payment provider; until one is connected, give credits from the command line:
+- **🪙 Credits.** How to earn credits, and the credit packs. Buying packs with real money is **not open yet**. The packs and the server hook (`grantPack` in `server/shop.js`) are ready for a payment provider. The plan is **PayPal Business**: a PayPal order for the pack, then PayPal's payment-captured webhook calls `grantPack` with the capture id, so a repeated webhook can't credit twice. Until that's connected, give credits from the command line:
 
 ```bash
 npm run account -- credits <username>                 # balance and recent history
