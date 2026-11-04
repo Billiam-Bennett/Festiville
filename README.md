@@ -260,17 +260,61 @@ The game server also serves the page itself at http://localhost:2567, so `npm ru
 
 ## Adding characters
 
-Players pick a character on the join screen (◀ ▶), with a live 3D preview. Everyone sees the character each player chose. The cast is listed in `shared/characters.js`; each character is a `.glb` model plus a `.anims.json` file of animations fitted to it, both in `client/assets/characters/`.
+Players have two ways to look:
 
-The cast is nine Mixamo characters: Michelle, Remy, Sophie, Bryce, Kate and Jody are free; Big Vegas, Jackie and Adam are premium. (The old Three.js sample characters are gone.)
+- **Build your own** (parts-based): pick a body (female or male), a skin tone, and for each slot (hair, eyebrows, top, bottom, shoes) a part and its color, or hit 🎲 Randomize. Built from MakeHuman (MPFB) CC0 art. This is where new looks should go.
+- **Classic**: one of nine whole Mixamo characters (◀ ▶). Michelle, Remy, Sophie, Bryce, Kate and Jody are free; Big Vegas, Jackie and Adam are premium. They're listed in `shared/characters.js` (a `.glb` plus a `.anims.json` each, in `client/assets/characters/`).
+
+Both are on the join screen and in the in-game 👕 panel, with a live 3D preview. Everyone sees what each player chose.
+
+### Parts-based characters (the generator)
+
+The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the slots, every part (which bodies it fits, free or premium), and the color palettes. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so a single animation set fits every combination. Colors are tinted in the game, not baked into the files.
+
+A player's look is stored as a short **recipe** string: body, skin tone, then `slot=part:color` for each filled slot (colors are palette numbers):
+
+```
+female;3;hair=hair_bob:4;eyebrows=brows_soft:1;top=top_tank:2;bottom=bottom_shorts:8;shoes=shoes_sneakers:0
+```
+
+The server cleans every recipe (`normalizeRecipe()`), swaps premium parts the account hasn't unlocked for the free default, saves it as the player's default, and syncs it to everyone. A player has either a recipe or a classic look; the classic look is kept too, as a fallback (see below). Quest givers and NPCs can wear a recipe: set `recipe` next to `look` in `shared/quests-data.js` (`randomRecipe(seededRandom("their-id"))` gives a random one that's the same on every screen).
+
+#### The asset contract (what the Blender pipeline must deliver)
+
+```
+client/assets/parts/anims.json            the shared animations: Idle, Walk, Run (optional Dance)
+client/assets/parts/female/body.glb       base body: skinned mesh + mixamorig* skeleton
+client/assets/parts/female/<partId>.glb   one per part that fits this body (e.g. hair_bob.glb, top_tank.glb)
+client/assets/parts/male/body.glb
+client/assets/parts/male/<partId>.glb
+```
+
+- `<partId>` is the part's `id` in `shared/parts.js`. Clothing and hair are exported **once per body** they fit (listed in the part's `bodies`).
+- **Bones:** every file uses the same `mixamorig*` bone names and the same rest pose as that body's `body.glb`. A part may carry its own copy of the skeleton (normal for a glb); the game only takes its skinned meshes and rebinds them to the player's body bones by name. A bone the body doesn't have falls back to its nearest parent that it does.
+- **Scale:** meters (MakeHuman's default). The two bodies keep their real heights.
+- **Colors:** the game multiplies each material's base color by the chosen swatch, so author tintable textures light grey or white. Materials whose name contains `eye`, `teeth`, `tongue`, `lash`, `fixed` or `notint` are left alone. On the body, the skin tone tints every other material.
+- **Animations:** fit them to one body with the retarget script (both bodies share the skeleton, so one set serves both):
+  ```bash
+  npm run retarget -- client/assets/parts/female/body.glb Idle=idle.glb Walk=walking.glb Run=running.glb Dance=dance.glb --out client/assets/parts/anims.json
+  ```
+
+#### Adding a part
+
+1. In Blender (MPFB), fit the hair or clothing to each body, rig it to the shared skeleton, and export `client/assets/parts/<body>/<id>.glb` for each body it fits.
+2. Add a line to `PARTS` in `shared/parts.js`, e.g. `{ id: "top_mesh", name: "Mesh top", slot: "top", bodies: ["female", "male"], tier: "free" }`. Ids are lowercase (`a-z 0-9 _ -`) and unique across parts, characters and accessories.
+3. Restart the server (it prints the part list at startup) and refresh. Palettes are append-only: recipes store color numbers, so reordering a palette recolors everyone.
+
+#### Before the art arrives (and when a file is missing)
+
+The code works without any part files. If a body's `body.glb` is missing, players who built a character appear as their **classic** character instead (the builder says so), and everything else carries on. A missing part file is skipped with a console warning. Downloads are cached and shared: each file is fetched once, and everyone wearing a part shares its mesh and textures.
 
 ### Free vs premium looks
 
 Each character has `tier: "free"` or `tier: "premium"` in `shared/characters.js`. Premium is cosmetic only: everyone can walk around, hang out, crew up and do quests no matter what they look like.
 
 - The picker shows premium looks with a lock note. Players can preview them, but the **server** decides who actually gets one (`server/entitlements.js`), so it can't be unlocked by tinkering in the browser.
-- Premium looks are unlocked **per account**: `npm run account -- unlock <username> <look>` (there are no payments yet, so this is how you grant one; a payment would later call the same thing). To unlock everything while testing, start the server with `FV_UNLOCK_ALL=1 npm start` (Windows: `set FV_UNLOCK_ALL=1 && npm start`).
-- When payments come, `canUseLook()` in `server/entitlements.js` is the one place to check a player's purchases.
+- Premium looks, accessories and character parts are unlocked **per account**: `npm run account -- unlock <username> <id>` (e.g. `bigvegas`, `wings`, `hair_afro`) (there are no payments yet, so this is how you grant one; a payment would later call the same thing). To unlock everything while testing, start the server with `FV_UNLOCK_ALL=1 npm start` (Windows: `set FV_UNLOCK_ALL=1 && npm start`).
+- When payments come, `server/entitlements.js` is the one place to check a player's purchases (`canUseLook()`, `canUseAccessory()`, `canUsePart()`).
 
 ### Accessories
 
@@ -281,10 +325,10 @@ Players can top any character with cosmetic accessories on the join screen — t
   ```bash
   npm run account -- unlock <username> wings      # also: tophat, halo, heartglasses
   ```
-- **Change your look mid-game:** tap the 👕 button (next to 💬) to swap character and accessories without leaving the festival. Everyone sees the change live. The client sends an `appearance` message; the server re-checks what the account may use, updates the room, and saves it as the player's new default.
+- **Change your look mid-game:** tap the 👕 button (next to 💬) to swap character (classic or built) and accessories without leaving the festival, with a live preview. Everyone sees the change live. The client sends an `appearance` message (`{ look, recipe, accessories }`); the server re-checks what the account may use, updates the room, and saves it as the player's new default.
 - Accessories are cosmetic only and never affect gameplay. To add your own, add an entry to `shared/accessories.js` and its shape to `client/accessories.js`.
 
-### Making a realistic character with MakeHuman (free)
+### Making a classic character with MakeHuman (free)
 
 MakeHuman characters are free to use in games, including commercial ones (its built-in skins, hair and clothes are CC0; check the license on any community add-ons).
 
@@ -298,7 +342,7 @@ MakeHuman characters are free to use in games, including commercial ones (its bu
 
 (Mixamo's own ready-made characters skip steps 1–5: pick one on the Characters tab and start at step 6. Any human model you buy or download, from Sketchfab for example, also works from step 5.)
 
-### Putting a character in the game
+### Putting a classic character in the game
 
 1. Put the model at `client/assets/characters/sam.glb` (use a short id, like `sam`).
 2. Fit the animations to it:

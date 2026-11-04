@@ -70,7 +70,7 @@ export class AccountStore {
     const account = {
       id, username, createdAt: new Date(this.now()).toISOString(),
       password: { salt: salt.toString("base64"), hash: hash.toString("base64") },
-      badges: [], look: "", unlocks: [], accessories: [],
+      badges: [], look: "", recipe: "", unlocks: [], accessories: [],
     };
     this.accounts[id] = account;
     this.byName.set(username.toLowerCase(), id);
@@ -157,6 +157,14 @@ export class AccountStore {
     if (a && a.look !== look) { a.look = look; this.save(); }
   }
 
+  // Their parts-based character recipe (shared/parts.js), or "" when they play a classic character.
+  setRecipe(id, recipe) {
+    this.refresh();
+    const a = this.accounts[id];
+    const next = typeof recipe === "string" ? recipe : "";
+    if (a && (a.recipe ?? "") !== next) { a.recipe = next; this.save(); }
+  }
+
   // Remember the accessories a player last wore, so they're pre-selected next time.
   setAccessories(id, list) {
     this.refresh();
@@ -218,6 +226,7 @@ export class AccountStore {
       id: a.id, username: a.username, badges: [...a.badges], look: a.look, unlocks: [...a.unlocks], createdAt: a.createdAt,
       role: a.role ?? "", mutedUntil: this.isMuted(a) ? a.mutedUntil : 0,
       accessories: [...(a.accessories ?? [])],
+      recipe: a.recipe ?? "",
     };
   }
 

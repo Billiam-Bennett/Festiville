@@ -2,24 +2,31 @@
 // To add or tweak a quest, start here: who gives it, where things are, what it says.
 // Positions are in meters on the festival map (see client/world.js for the landmarks).
 
+import { randomRecipe, seededRandom } from "./parts.js";
+
 export const CREW_MAX = 4;
 export const TALK_RANGE = 5;          // how close you must be to a quest giver to talk
 export const PICKUP_RANGE = 2.5;      // how close to walk to grab a quest item
 export const INVITE_TTL = 30;         // seconds an invite stays open
 
 // Characters standing around the grounds who hand out quests.
+// look: a classic character (shared/characters.js). recipe (optional): a parts-based character
+// (shared/parts.js) shown instead when the part files are installed; `look` stays as the fallback.
 export const GIVERS = [
-  { id: "juniper", name: "Juniper", role: "Lost raver", x: -12, z: 12, quest: "lostfound", look: "sophie" },
-  { id: "dex", name: "Dex", role: "Stage manager", x: 9, z: -46, quest: "soundcheck", look: "bryce" },
+  { id: "juniper", name: "Juniper", role: "Lost raver", x: -12, z: 12, quest: "lostfound", look: "sophie",
+    recipe: "female;2;hair=hair_ponytail:5;eyebrows=brows_soft:2;top=top_crop:2;bottom=bottom_shorts:8;shoes=shoes_boots:1" },
+  { id: "dex", name: "Dex", role: "Stage manager", x: 9, z: -46, quest: "soundcheck", look: "bryce",
+    recipe: "male;5;hair=hair_short:0;eyebrows=brows_bold:0;top=top_tee:1;bottom=bottom_jeans:8;shoes=shoes_boots:1" },
   { id: "rae", name: "Mama Rae", role: "Taco stand", x: -55, z: -20, quest: "vendorrush", look: "jody" },
 ];
 
 // Ambient NPCs — characters standing around the festival to make it feel populated.
 // No dialogue or quest; they idle in place. Positions are just off the main foot-traffic paths.
+// The campers get a random parts-based look, seeded by their id so everyone sees the same one.
 export const AMBIENT = [
   { id: "greeter",    name: "Ez",       role: "Greeter",         x: 0,   z: 8,   look: "michelle" },
-  { id: "camper1",    name: "Ridley",   role: "Camper",          x: -14, z: 62,  look: "remy" },
-  { id: "camper2",    name: "Ash",      role: "Camper",          x: 22,  z: 62,  look: "kate" },
+  { id: "camper1",    name: "Ridley",   role: "Camper",          x: -14, z: 62,  look: "remy", recipe: randomRecipe(seededRandom("camper1")) },
+  { id: "camper2",    name: "Ash",      role: "Camper",          x: 22,  z: 62,  look: "kate", recipe: randomRecipe(seededRandom("camper2")) },
   { id: "photog",     name: "Zoe",      role: "Photographer",    x: -6,  z: -30, look: "sophie" },
   { id: "medic",      name: "Doc",      role: "Medic tent",      x: 40,  z: 20,  look: "adam" },
   { id: "dj",         name: "K-Bass",   role: "Side stage DJ",   x: 60,  z: 6,   look: "bigvegas" },

@@ -13,7 +13,8 @@ export class Player extends Schema {
     this.emote = "";           // "" or "dance"; everyone sees it
     this.crewId = "";          // "" when not in a crew
     this.badges = "";          // comma-separated badge names earned from quests
-    this.look = "";            // character id from shared/characters.js
+    this.look = "";            // character id from shared/characters.js (also the fallback when a recipe can't be shown)
+    this.recipe = "";          // parts-based character (shared/parts.js), or "" for the classic `look`
     this.staff = false;        // festival staff (moderators) get a STAFF tag
     this.accessories = "";     // comma-separated cosmetic accessory ids (shared/accessories.js)
     // Avatar fields — map these to your existing avatar builder.
@@ -31,6 +32,7 @@ defineTypes(Player, {
   crewId: "string",
   badges: "string",
   look: "string",
+  recipe: "string",
   staff: "boolean",
   accessories: "string",
   skinTone: "string",
