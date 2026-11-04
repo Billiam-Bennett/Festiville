@@ -30,7 +30,12 @@ export function setupShop({ mp, toast, account, camps, me }) {
     if (open()) render();
   });
   room.send("wallet");
-  camps.onChange(() => { if (open() && tab === "camp") render(); });
+  // Your own camp changed outside this panel (e.g. `npm run account -- camp-release`): get a fresh wallet.
+  camps.onChange(() => {
+    const mineNow = camps.all().find((c) => c.id === account?.username?.toLowerCase()) ?? null;
+    if (JSON.stringify(mineNow) !== JSON.stringify(wallet.camp)) room.send("wallet");
+    else if (open() && tab === "camp") render();
+  });
 
   const open = () => !$("shop").hidden;
   function show(t = tab) {
