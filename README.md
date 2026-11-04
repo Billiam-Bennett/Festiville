@@ -300,7 +300,18 @@ npm run account -- camp-release <username>            # take back a camp spot (n
 
 A new camp item also needs its 3D shape in `buildItem()` in `client/camps.js`. A new wearable needs an entry in `shared/accessories.js` and a shape in `client/accessories.js`.
 
-**Later:** promotional ad space for businesses (sponsored signs, banners and featured vendor spots) is planned as another thing credits can buy. It will reuse the same wallet and ledger.
+**The rules for credits** (also shown to players in the 🪙 Credits tab):
+
+- **100 credits ≈ $1.** Bigger packs add a bonus: $4.99 → 500, $9.99 → 1,200 (+20%), $19.99 → 2,600 (+30%).
+- Credits have **no cash value** and can't be exchanged for money. Purchases of credits and of things bought with credits are **not refundable**.
+- Credits **can't be transferred** or gifted between players (this keeps out scams and resale of stolen accounts; gifting may come later).
+- Credits **don't expire**.
+- **Price tiers:**
+  - small things, 40–150 credits, are reachable in one play session
+  - mid-range things, 200–500, take a few days of play or a few dollars
+  - showpieces, 600–1,000, are mostly bought, or take about a week of play
+
+**Later: ad space for businesses.** Sponsored signs, banners and featured vendor spots will be sold to businesses **in dollars** (by invoice or PayPal), not in credits. Businesses expect receipts, and this keeps the player economy separate.
 
 ## Adding characters
 

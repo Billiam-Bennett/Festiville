@@ -34,6 +34,14 @@ test("catalog: every priced unlock is a real premium item; camp items and plots 
   assert.ok(CAMP_ITEMS.some((i) => i.price === 0 && i.group === "tent"), "a free tent comes with every camp");
   for (let k = 1; k < PLOTS.length; k++) assert.ok(PLOTS[k].price > PLOTS[k - 1].price && PLOTS[k].w * PLOTS[k].d > PLOTS[k - 1].w * PLOTS[k - 1].d);
   assert.ok(STARTING_CREDITS >= PLOTS[0].price, "a new player can afford the smallest camp spot");
+  // 100 credits ≈ $1, and bigger packs never give less per dollar than smaller ones.
+  let perDollar = 0;
+  for (const p of CREDIT_PACKS) {
+    const rate = p.credits / p.usd;
+    assert.ok(rate >= 100, `${p.id} gives at least 100 credits per dollar`);
+    assert.ok(rate >= perDollar, `${p.id} is at least as good a deal as the smaller packs`);
+    perDollar = rate;
+  }
   for (const id of Object.keys(QUEST_REWARDS)) assert.ok(QUESTS[id], id);
   assert.ok(shopCatalog().some((i) => i.id === "totem" && i.kind === "wear"));
   assert.ok(shopCatalog().some((i) => i.id === "pa" && i.kind === "camp" && i.featured));

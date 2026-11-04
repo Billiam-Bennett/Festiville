@@ -10,7 +10,11 @@
 //
 // What credits buy (SHOP below): a camp spot in the Campground and bigger spots, things for your camp
 // (including featured ones like a PA system), and premium personal items you wear around the
-// festival. Later: promotional ad space for businesses (see README → "Credits and the shop").
+// festival. (Ad space for businesses will be sold in dollars, not credits; see README.)
+//
+// The economy, as agreed: 100 credits ≈ $1. Small things 40–150 (one play session), mid-range 200–500
+// (a few days of play or a few dollars), showpieces 600–1,000 (mostly bought, or about a week of play).
+// Credits have no cash value, aren't refundable, can't be transferred between players, and don't expire.
 //
 // Prices are whole credits. Change them freely; nothing stores a price.
 
@@ -30,6 +34,9 @@ export const QUEST_REWARDS = {
 
 // Credit packs for real money. NOT LIVE: no payment provider is connected (see server/shop.js →
 // grantPack, which a payment webhook will call). usd is what the store page will charge.
+// The terms shown to players next to the packs (keep in step with the README).
+export const CREDIT_TERMS = "Credits have no cash value, can't be refunded or transferred to other players, and never expire.";
+
 export const CREDIT_PACKS = [
   { id: "pack_small",  credits: 500,  usd: 4.99,  name: "Handful" },
   { id: "pack_medium", credits: 1200, usd: 9.99,  name: "Pocketful", note: "+20% bonus" },

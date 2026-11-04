@@ -1,7 +1,7 @@
 // Credits and the shop: the 🪙 balance button and the Shop panel (Camp · Wear · Looks · Get credits).
 // The browser only shows and asks; the server (server/shop.js, FestivalRoom.handleCamp) decides,
 // takes the credits and answers with a "wallet" message (balance, unlocks, camp items, your camp).
-import { PLOTS, plotById, plotRank, CAMP_ITEMS, campItemById, CREDIT_PACKS, QUEST_REWARDS, shopCatalog } from "../shared/economy.js";
+import { PLOTS, plotById, plotRank, CAMP_ITEMS, campItemById, CREDIT_PACKS, CREDIT_TERMS, QUEST_REWARDS, shopCatalog } from "../shared/economy.js";
 import { checkSpot, groundCapacity, cleanCampItems } from "../shared/camps.js";
 import { LAYOUT } from "../shared/venue.js";
 import { QUESTS } from "../shared/quests-data.js";
@@ -152,6 +152,7 @@ export function setupShop({ mp, toast, account, camps, me }) {
       const b = el("button", { type: "button", className: "btn-sm", textContent: `$${p.usd.toFixed(2)}`, disabled: true });
       out.push(row(`${p.name}: ${coins(p.credits)}`, p.note ?? "", b));
     }
+    out.push(el("p", { className: "small", textContent: CREDIT_TERMS }));
     return out;
   }
 
