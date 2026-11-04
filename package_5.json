@@ -1,0 +1,31 @@
+{
+  "name": "festiville",
+  "version": "0.1.0",
+  "description": "FestiVille: a real-time multiplayer festival with crews and side quests",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "client": "node scripts/serve-client.js",
+    "test": "node --test test/sim.test.js test/quests.test.js test/vendors.test.js test/chat.test.js test/accounts.test.js test/moderation.test.js test/layout.test.js test/truck.test.js test/accessories.test.js",
+    "bots": "node test/bots.js",
+    "retarget": "node scripts/retarget.mjs",
+    "vendor-link": "node scripts/vendor-link.mjs",
+    "account": "node scripts/account.mjs",
+    "loadtest": "node scripts/loadtest.mjs",
+    "layout": "node scripts/layout.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^3.0.0",
+    "@colyseus/ws-transport": "^0.16.0",
+    "colyseus": "^0.16.0",
+    "colyseus.js": "^0.16.0"
+  },
+  "devDependencies": {
+    "three": "^0.171.0"
+  }
+}

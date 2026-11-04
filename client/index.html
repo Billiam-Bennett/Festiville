@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>FestiVille</title>
+  <link rel="icon" type="image/png" href="assets/favicon.png" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#140c1e" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/",
+      "colyseus.js": "https://cdn.jsdelivr.net/npm/colyseus.js@0.16/+esm"
+    }
+  }
+  </script>
+  <style>
+    :root { --pink: #ff4fa3; --ink: #fff; --panel: rgba(20, 12, 32, 0.85); }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #2a1b3d; color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif; touch-action: none; }
+    canvas { display: block; }
+
+    #join { position: fixed; inset: 0; display: grid; place-items: end center; padding: 16px 16px 24px; }
+    @media (min-width: 800px) { #join { place-items: center end; padding-right: 8vw; } }
+    .picker { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+    .picker button { width: 44px; padding: 10px 0; background: rgba(255,255,255,.1); }
+    .picker .who { text-align: center; }
+    .picker strong { display: block; font-size: 18px; }
+    .tier { font-size: 12px; opacity: .75; }
+    .tier.premium { color: #ffd36b; opacity: 1; }
+    #pk-count { font-size: 11px; opacity: .6; }
+    #join[hidden] { display: none; }
+    #join-form { width: min(360px, 100%); background: var(--panel); border: 1px solid rgba(255,255,255,.12);
+      border-radius: 16px; padding: 24px; display: grid; gap: 14px; backdrop-filter: blur(6px); }
+    h1 { margin: 0; font-size: 28px; letter-spacing: .5px; }
+    h1 span { color: var(--pink); }
+    .tag { margin: -8px 0 4px; opacity: .75; font-size: 14px; }
+    label { font-size: 13px; opacity: .85; display: grid; gap: 6px; }
+    .field { display: grid; gap: 6px; }
+    .field-label { font-size: 13px; opacity: .85; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chips button { padding: 7px 11px; font-size: 13px; border-radius: 999px; background: rgba(255,255,255,.1); border: 1px solid transparent; }
+    .chips button[aria-pressed="true"] { background: rgba(255,79,163,.28); border-color: var(--pink, #ff4fa3); }
+    .chips button.locked { opacity: .55; }
+    .chips button .lk { font-size: 11px; opacity: .8; margin-left: 3px; }
+    input[type=text] { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.2);
+      background: rgba(255,255,255,.08); color: var(--ink); }
+    input[type=color] { width: 100%; height: 40px; border: none; border-radius: 10px; background: none; padding: 0; }
+    button { font: inherit; font-weight: 700; padding: 12px; border: none; border-radius: 10px;
+      background: var(--pink); color: #fff; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #join-error { color: #ff9a9a; font-size: 13px; min-height: 1em; margin: 0; }
+    #auth, #signed-in { display: grid; gap: 14px; }
+    #auth[hidden], #signed-in[hidden] { display: none; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 12px; background: rgba(255,255,255,.07); }
+    .tabs button { padding: 8px; background: transparent; font-weight: 600; opacity: .75; }
+    .tabs button[aria-selected="true"] { background: rgba(255,255,255,.14); opacity: 1; }
+    .pw { position: relative; display: block; }
+    .pw input { width: 100%; padding-right: 64px; }
+    .pw .linkbtn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); }
+    .linkbtn { background: none; border: none; padding: 2px 4px; color: #ffd36b; font-weight: 600; font-size: 13px; cursor: pointer; }
+    .hint { margin: -6px 0 0; font-size: 12px; opacity: .75; line-height: 1.4; }
+    .whoami { margin: 0; font-size: 14px; }
+    #me-badges { margin: -8px 0 0; }
+    #join-form input[type=password] { font: inherit; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.2);
+      background: rgba(255,255,255,.08); color: var(--ink); }
+
+    #hud { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between;
+      pointer-events: none; font-size: 14px; }
+    #hud-badges { color: #ffd36b; }
+    #hud[hidden] { display: none; }
+    #hud div { background: var(--panel); padding: 6px 12px; border-radius: 999px; }
+    #hud-status.bad { color: #ff9a9a; }
+    #dance { position: fixed; right: 20px; bottom: 28px; padding: 14px 20px; border-radius: 999px;
+      background: var(--panel); border: 2px solid var(--pink); }
+    #dance[aria-pressed="true"] { background: var(--pink); }
+    @media (pointer: fine) { #dance { bottom: 52px; } }
+    [hidden] { display: none !important; }
+    #help { position: fixed; bottom: 12px; right: 12px; font-size: 12px; opacity: .7; background: var(--panel);
+      padding: 6px 10px; border-radius: 8px; }
+
+    /* ---- Crews & quests ---- */
+    .card { background: var(--panel); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; backdrop-filter: blur(6px); }
+    .small { font-size: 12px; opacity: .8; }
+    .btn-ghost { background: transparent; border: 1px solid rgba(255,255,255,.3); }
+    .btn-sm { padding: 6px 10px; font-size: 13px; border-radius: 8px; }
+    #toasts { position: fixed; bottom: 236px; left: 50%; transform: translateX(-50%); width: min(420px, calc(100% - 32px));
+      display: grid; gap: 6px; pointer-events: none; z-index: 5; }
+    .toast { padding: 10px 14px; font-size: 14px; text-align: center; transition: opacity .4s; }
+    .toast.error { border-color: #ff9a9a; }
+    .toast.big { background: linear-gradient(135deg, rgba(255,79,163,.95), rgba(180,79,255,.95)); font-weight: 700; font-size: 16px; }
+    #side { position: fixed; top: 52px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; justify-content: space-between;
+      align-items: flex-start; gap: 8px; pointer-events: none; }
+    #side > * { pointer-events: auto; }
+    #tracker { width: min(280px, 100%); padding: 12px 14px; display: grid; gap: 6px; }
+    #tracker h3 { margin: 0; font-size: 15px; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+    #tracker .timer { font-variant-numeric: tabular-nums; color: #ffd36b; font-size: 14px; }
+    #tracker .obj { font-size: 14px; line-height: 1.35; }
+    #tracker .bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.15); overflow: hidden; }
+    #tracker .bar i { display: block; height: 100%; background: #7dff6b; width: 0; transition: width .15s; }
+    #tracker button { justify-self: start; }
+    #leftcol { display: grid; gap: 8px; align-content: start; width: min(300px, 100%); }
+    #rightcol { margin-left: auto; display: grid; gap: 8px; justify-items: end; }
+
+    /* ---- Chat ---- */
+    #chat { pointer-events: none; }
+    #chat-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 30vh; overflow: hidden; }
+    body.chatting #chat-log { pointer-events: auto; overflow-y: auto; max-height: 40vh; }
+    #chat-log li { background: rgba(20,12,32,.72); border-radius: 10px; padding: 5px 10px; font-size: 14px; line-height: 1.35;
+      overflow-wrap: anywhere; transition: opacity .6s; width: fit-content; max-width: 100%; }
+    #chat-log li.old { opacity: 0; }
+    #chat-log b { color: #ffd36b; }
+    #chat-log b.me { color: #ff8fcf; }
+    #chat-log li.crew { border-left: 3px solid #4fe3ff; }
+    #chat-log .chan { font-size: 11px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #4fe3ff; margin-right: 6px; }
+    #chat-form { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(560px, calc(100% - 24px)); z-index: 7;
+      display: flex; gap: 6px; padding: 8px; }
+    #chat-form input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #fff; }
+    #chat-form button { padding: 10px 12px; }
+    #chat-chan { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.25); min-width: 76px; }
+    #chat-chan.crew { background: #4fe3ff; color: #0c2a33; border-color: #4fe3ff; }
+    #chat-chan:disabled { opacity: .8; cursor: default; }
+    #chat-btn { position: fixed; right: 140px; bottom: 28px; width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 22px;
+      background: var(--panel); border: 2px solid rgba(255,255,255,.35); }
+    #looks-btn { position: fixed; right: 200px; bottom: 28px; width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 22px;
+      background: var(--panel); border: 2px solid rgba(255,255,255,.35); }
+    @media (pointer: fine) { #chat-btn, #looks-btn { bottom: 52px; } }
+    body.chatting #prompt, body.chatting #vprompt, body.chatting #dance, body.chatting #chat-btn, body.chatting #looks-btn, body.chatting #joystick { visibility: hidden; }
+    #crew { width: 180px; padding: 10px 12px; display: grid; gap: 6px; font-size: 14px; }
+    #crew h3 { margin: 0; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; opacity: .8; }
+    #crew ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+    #crew li::before { content: "●"; color: #4fe3ff; margin-right: 6px; }
+    #prompt { position: fixed; left: 50%; transform: translateX(-50%); bottom: 170px; padding: 12px 20px; border-radius: 999px; white-space: nowrap;
+      background: #ffd36b; color: #2a1a05; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+    #vprompt { position: fixed; left: 50%; transform: translateX(-50%); bottom: 170px; padding: 12px 20px; border-radius: 999px; white-space: nowrap;
+      background: #fff; color: #2a1a3a; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+    @media (pointer: fine) { #prompt, #vprompt { bottom: 110px; } #toasts { bottom: 170px; } }
+
+    /* ---- Minimap ---- */
+    #minimap-wrap { display: grid; gap: 6px; justify-items: center; }
+    #minimap { width: 160px; height: 160px; border-radius: 50%; cursor: pointer; box-shadow: 0 4px 18px rgba(0,0,0,.45); touch-action: none; }
+    .mm-btns { display: flex; gap: 6px; }
+    .mm-btns button { padding: 6px 0; width: 38px; font-size: 16px; line-height: 1; background: var(--panel); border: 1px solid rgba(255,255,255,.25); }
+    .mm-btns #map-btn { width: auto; padding: 6px 10px; font-size: 13px; }
+    #mm-wp { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #fff; color: #2a1a3a; font-weight: 700; max-width: 180px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ---- Full map ---- */
+    #bigmap { position: fixed; inset: 0; z-index: 8; background: #140c1e; display: grid; grid-template-columns: 1fr 320px; }
+    #bm-canvas { width: 100%; height: 100%; touch-action: none; cursor: grab; }
+    #bm-canvas:active { cursor: grabbing; }
+    .bm-map { position: relative; min-height: 0; }
+    .bm-top { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      justify-content: space-between; padding: 10px 12px; pointer-events: none; }
+    .bm-top > * { pointer-events: auto; }
+    .bm-top strong { font-size: 16px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; opacity: .85; }
+    .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+    #bm-list { overflow: auto; padding: 14px; border-left: 1px solid rgba(255,255,255,.1); background: var(--panel); }
+    #bm-list h3 { margin: 6px 0 8px; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; opacity: .85; }
+    #bm-list ul { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 6px; }
+    #bm-list button { width: 100%; display: flex; gap: 10px; align-items: center; text-align: left; padding: 8px 10px; font-weight: 400;
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); }
+    #bm-list button:hover { background: rgba(255,255,255,.12); }
+    #bm-list i { flex: none; width: 14px; height: 14px; border-radius: 4px; }
+    #bm-list b { display: block; font-size: 14px; }
+    #bm-list small { display: block; font-size: 12px; opacity: .7; }
+    @media (max-width: 799px) {
+      #bigmap { grid-template-columns: 1fr; grid-template-rows: 1fr 36vh; }
+      #bm-list { border-left: none; border-top: 1px solid rgba(255,255,255,.1); }
+      .legend { display: none; }
+    }
+
+    /* ---- Vendor card ---- */
+    #vendor { z-index: 9; max-height: min(78vh, 640px); overflow: auto; }
+    #vd-name { display: flex; align-items: center; gap: 10px; }
+    #vd-name::before { content: ""; width: 14px; height: 14px; border-radius: 4px; background: var(--swatch, #fff); flex: none; }
+    .sub { margin: 4px 0 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; opacity: .75; }
+    .menu, .next { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 14px; }
+    .menu li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px dashed rgba(255,255,255,.14); }
+    .menu b { color: #ffd36b; font-variant-numeric: tabular-nums; }
+    .next li { display: grid; grid-template-columns: 92px 1fr; gap: 8px; padding: 4px 0; }
+    .next li b { color: #ffd36b; font-size: 13px; }
+    .next small { display: block; opacity: .7; font-size: 12px; }
+    .next li.none { display: block; opacity: .7; }
+    a.btn-ghost { font-weight: 700; padding: 12px; border-radius: 10px; color: #fff; text-decoration: none; }
+    @media (max-width: 520px) {
+      #rightcol { display: contents; }
+      #minimap-wrap { margin-left: auto; }
+      #minimap { width: 112px; height: 112px; }
+      .mm-btns button { width: 32px; }
+      #mm-wp { max-width: 120px; }
+      #crew { width: 100%; grid-template-columns: 1fr auto; align-items: center; }
+      #crew h3 { display: none; }
+      #crew ul { grid-auto-flow: column; justify-content: start; gap: 12px; }
+      #tracker { width: 100%; }
+      #leftcol { flex: 1 1 0; min-width: 0; width: auto; }
+      #chat-log li { font-size: 13px; }
+    }
+    .sheet { position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; width: min(440px, calc(100% - 32px));
+      padding: 16px; display: grid; gap: 10px; z-index: 6; }
+    .sheet h2 { margin: 0; font-size: 18px; }
+    .sheet p { margin: 0; font-size: 14px; line-height: 1.45; }
+    .sheet .who { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: #ffd36b; }
+    .sheet .blocked { color: #ff9a9a; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .staff { display: grid; gap: 8px; border-top: 1px solid rgba(255,255,255,.15); padding-top: 10px; }
+    .staff button.danger { border-color: #ff9a9a; color: #ffc4c4; }
+    #rp-reasons button[aria-pressed="true"] { border-color: #ff9a9a; }
+    #rp-reasons button[aria-pressed="true"] { background: rgba(255,154,154,.2); }
+    .staff input, #report input:not([type]) { font: inherit; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.3); color: #fff; font-size: 16px; }
+    .check { display: flex; gap: 8px; align-items: center; }
+    #joystick { position: fixed; left: 24px; bottom: 24px; width: 130px; height: 130px; border-radius: 50%;
+      background: rgba(255,255,255,.1); border: 2px solid rgba(255,255,255,.25); display: none; place-items: center; }
+    #joystick .knob { width: 56px; height: 56px; border-radius: 50%; background: rgba(255,255,255,.45); pointer-events: none; }
+    @media (pointer: coarse) { #joystick { display: grid; } #help { display: none; } }
+
+    /* ---- Staff: Reports screen ---- */
+    #reports-btn { position: fixed; right: 200px; bottom: 90px; width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 22px;
+      background: var(--panel); border: 2px solid #ff9a9a; }
+    #reports-btn b { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+      background: #ff4f6d; color: #fff; font-size: 12px; line-height: 20px; }
+    @media (pointer: fine) { #reports-btn { bottom: 114px; } }
+    body.chatting #reports-btn { visibility: hidden; }
+    #reports { position: fixed; top: 12px; right: 12px; bottom: 12px; width: min(440px, calc(100% - 24px)); z-index: 9;
+      display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+    #reports > header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.12); }
+    #reports > header h2 { margin: 0; font-size: 18px; flex: 1; }
+    #rv-count { color: #ff9a9a; font-size: 13px; font-weight: 700; }
+    #rv-list { overflow: auto; padding: 12px; display: grid; gap: 12px; align-content: start; }
+    .rv-empty { text-align: center; padding: 30px 10px; display: grid; gap: 6px; }
+    .rv-card { border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 12px; display: grid; gap: 8px; background: rgba(0,0,0,.18); }
+    .rv-card header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .rv-card h3 { margin: 0; font-size: 17px; overflow-wrap: anywhere; }
+    .rv-card p { margin: 0; }
+    .pills { display: flex; gap: 4px; flex-wrap: wrap; }
+    .pill { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.12); }
+    .pill.on { background: #2f7a3a; } .pill.warn { background: #7a5a1f; } .pill.bad { background: #8a2b36; }
+    .rv-reports { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+    .rv-reports li { display: grid; gap: 2px; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,.05); }
+    .rv-reports b { color: #ffc4c4; }
+    .rv-reports q { font-size: 13px; opacity: .9; overflow-wrap: anywhere; }
+    .rv-card details { font-size: 13px; }
+    .rv-card summary { cursor: pointer; opacity: .85; font-weight: 600; }
+    .rv-chat ol, .rv-past ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 3px; max-height: 180px; overflow: auto; }
+    .rv-chat li { padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.25); overflow-wrap: anywhere; }
+    .rv-chat li.crew { border-left: 3px solid #4fe3ff; }
+    .rv-actions button.danger { border-color: #ff9a9a; color: #ffc4c4; }
+    .rv-actions button.dismiss { border-color: rgba(255,255,255,.5); }
+    .rv-actions button:disabled { opacity: .4; cursor: default; }
+    .rv-card input { font: inherit; padding: 9px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); background: rgba(0,0,0,.3); color: #fff; font-size: 16px; }
+  </style>
+</head>
+<body>
+  <div id="join">
+    <form id="join-form">
+      <h1>Festi<span>Ville</span></h1>
+      <p class="tag">Hang out, dance, and team up on side quests. Find your people.</p>
+      <div id="auth">
+        <div class="tabs" role="tablist">
+          <button id="tab-login" type="button" role="tab" aria-selected="true">Sign in</button>
+          <button id="tab-signup" type="button" role="tab" aria-selected="false">Create account</button>
+        </div>
+        <label>Username
+          <input id="username" type="text" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" />
+        </label>
+        <label>Password
+          <span class="pw"><input id="password" type="password" maxlength="128" autocomplete="current-password" />
+          <button id="pw-show" type="button" class="linkbtn" aria-label="Show password">Show</button></span>
+        </label>
+        <p class="hint" id="auth-hint" hidden>Username: 3–16 letters, numbers or _. It's the name other players see. Password: 8+ characters.</p>
+        <button id="auth-btn" type="submit">Sign in</button>
+      </div>
+      <div id="signed-in" hidden>
+      <p class="whoami">Signed in as <b id="me-name"></b> · <button id="sign-out" type="button" class="linkbtn">Sign out</button></p>
+      <p class="small" id="me-badges"></p>
+      <div class="field"><span class="field-label">Your character</span>
+        <div class="picker">
+          <button id="pk-prev" type="button" aria-label="Previous character">◀</button>
+          <div class="who"><strong id="pk-name"></strong><span id="pk-tier" class="tier"></span><div id="pk-count"></div></div>
+          <button id="pk-next" type="button" aria-label="Next character">▶</button>
+        </div>
+      </div>
+      <div class="field"><span class="field-label">Accessories</span>
+        <div id="accessories" class="chips"></div>
+      </div>
+      <button id="join-btn" type="submit">Enter the festival</button>
+      </div>
+      <p id="join-error" role="alert"></p>
+    </form>
+  </div>
+
+  <div id="hud" hidden>
+    <div id="hud-status">Live</div>
+    <div id="hud-badges" hidden></div>
+    <div id="hud-online">1 online</div>
+  </div>
+  <button id="dance" type="button" aria-pressed="false" hidden>Dance</button>
+  <button id="chat-btn" type="button" aria-label="Chat" title="Chat (Enter)" hidden>💬</button>
+  <button id="looks-btn" type="button" aria-label="Change your look" title="Change your look" hidden>👕</button>
+
+  <button id="reports-btn" type="button" aria-label="Reports" title="Reports" hidden>🛡️<b hidden>0</b></button>
+  <section id="reports" class="card" hidden role="dialog" aria-labelledby="rv-title">
+    <header>
+      <h2 id="rv-title">Reports</h2>
+      <span id="rv-count"></span>
+      <button id="rv-refresh" class="btn-ghost btn-sm" type="button" aria-label="Refresh">↻</button>
+      <button id="rv-close" class="btn-ghost btn-sm" type="button">Close</button>
+    </header>
+    <div id="rv-list"></div>
+  </section>
+  <section id="looks" class="card sheet" hidden role="dialog" aria-labelledby="looks-title">
+    <h2 id="looks-title">Your look</h2>
+    <div class="field"><span class="field-label">Character</span>
+      <div class="picker">
+        <button id="lk-prev" type="button" aria-label="Previous character">◀</button>
+        <div class="who"><strong id="lk-name"></strong><span id="lk-tier" class="tier"></span></div>
+        <button id="lk-next" type="button" aria-label="Next character">▶</button>
+      </div>
+    </div>
+    <div class="field"><span class="field-label">Accessories</span>
+      <div id="lk-accessories" class="chips"></div>
+    </div>
+    <div class="row">
+      <button id="lk-apply" type="button">Apply</button>
+      <button id="lk-close" class="btn-ghost" type="button">Close</button>
+    </div>
+  </section>
+  <form id="chat-form" class="card" hidden autocomplete="off">
+    <button id="chat-chan" type="button">Nearby</button>
+    <input id="chat-input" maxlength="140" enterkeyhint="send" aria-label="Chat message" />
+    <button type="submit">Send</button>
+    <button id="chat-close" type="button" class="btn-ghost" aria-label="Close chat">×</button>
+  </form>
+  <div id="help">WASD / arrows to move · Shift to run · E to dance · T to talk or browse · Enter to chat · Scroll or +/- to zoom · M for map · Click a player to invite</div>
+
+  <div id="toasts" aria-live="polite"></div>
+
+  <div id="side">
+  <div id="leftcol">
+  <section id="tracker" class="card" hidden>
+    <h3><span id="tr-name"></span><span class="timer" id="tr-timer"></span></h3>
+    <div class="obj" id="tr-obj"></div>
+    <div class="bar"><i id="tr-bar"></i></div>
+    <button id="tr-quit" class="btn-ghost btn-sm" type="button">Quit quest</button>
+  </section>
+  <section id="chat" hidden aria-label="Chat"><ol id="chat-log" aria-live="polite"></ol></section>
+  </div>
+
+  <div id="rightcol">
+    <div id="minimap-wrap" hidden>
+      <canvas id="minimap" aria-label="Minimap. Tap for the full festival map." role="button"></canvas>
+      <div id="mm-wp" hidden></div>
+      <div class="mm-btns">
+        <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+        <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        <button id="map-btn" type="button">Map</button>
+      </div>
+    </div>
+    <section id="crew" class="card" hidden>
+      <h3>Your crew</h3>
+      <ul id="crew-list"></ul>
+      <button id="crew-leave" class="btn-ghost btn-sm" type="button">Leave crew</button>
+    </section>
+  </div>
+  </div>
+
+  <button id="prompt" type="button" hidden></button>
+  <button id="vprompt" type="button" hidden></button>
+
+  <section id="bigmap" hidden aria-label="Festival map">
+    <div class="bm-map">
+      <canvas id="bm-canvas"></canvas>
+      <div class="bm-top card">
+        <strong>Festival map</strong>
+        <div class="legend">
+          <span><i style="background:#ff4fa3"></i>You</span><span><i style="background:#4fe3ff"></i>Crew</span>
+          <span><i style="background:#fff"></i>Players</span><span><i style="background:#ffd36b"></i>Quests</span>
+        </div>
+        <div class="row">
+          <button id="bm-me" class="btn-ghost btn-sm" type="button">Center on me</button>
+          <button id="bm-close" class="btn-sm" type="button">Close</button>
+        </div>
+      </div>
+    </div>
+    <aside id="bm-list"></aside>
+  </section>
+
+  <section id="vendor" class="card sheet" hidden role="dialog" aria-labelledby="vd-name">
+    <div class="who" id="vd-where"></div>
+    <h2 id="vd-name"></h2>
+    <p class="small" id="vd-tag"></p>
+    <h3 class="sub" id="vd-menu-h">Menu</h3>
+    <ul class="menu" id="vd-items"></ul>
+    <h3 class="sub">Where they'll be next</h3>
+    <ul class="next" id="vd-next"></ul>
+    <div class="row">
+      <button id="vd-go" type="button">Take me there</button>
+      <a id="vd-link" class="btn-ghost" target="_blank" rel="noopener" hidden>Website</a>
+      <button id="vd-close" class="btn-ghost" type="button">Close</button>
+    </div>
+  </section>
+
+  <section id="offer" class="card sheet" hidden role="dialog" aria-labelledby="of-name">
+    <div class="who" id="of-who"></div>
+    <h2 id="of-name"></h2>
+    <p id="of-pitch"></p>
+    <p class="small" id="of-how"></p>
+    <p class="small" id="of-badge"></p>
+    <p class="blocked" id="of-blocked" hidden></p>
+    <div class="row">
+      <button id="of-start" type="button">Start quest</button>
+      <button id="of-close" class="btn-ghost" type="button">Not now</button>
+    </div>
+  </section>
+
+  <section id="player-card" class="card sheet" hidden>
+    <h2 id="pc-name"></h2>
+    <p class="small" id="pc-badges"></p>
+    <div class="row">
+      <button id="pc-invite" type="button">Invite to crew</button>
+      <button id="pc-mute" class="btn-ghost" type="button">Mute</button>
+      <button id="pc-report" class="btn-ghost" type="button">Report</button>
+      <button id="pc-close" class="btn-ghost" type="button">Close</button>
+    </div>
+    <div id="pc-staff" class="staff" hidden>
+      <div class="who">Staff</div>
+      <div class="row">
+        <button type="button" class="btn-ghost btn-sm" data-act="mute15">Mute 15 min</button>
+        <button type="button" class="btn-ghost btn-sm" data-act="mute24h">Mute 1 day</button>
+        <button type="button" class="btn-ghost btn-sm" data-act="kick">Kick</button>
+        <button type="button" class="btn-ghost btn-sm danger" data-act="ban1d">Ban 1 day</button>
+        <button type="button" class="btn-ghost btn-sm danger" data-act="ban7d">Ban 7 days</button>
+        <button type="button" class="btn-ghost btn-sm danger" data-act="banForever">Ban forever</button>
+      </div>
+      <input id="pc-why" maxlength="200" placeholder="Reason (the player sees it if banned)" autocomplete="off">
+    </div>
+  </section>
+
+  <section id="report" class="card sheet" hidden role="dialog" aria-labelledby="rp-title">
+    <h2 id="rp-title">Report</h2>
+    <p class="small">Festival staff will see this, along with their recent chat. They won't know it was you.</p>
+    <div class="row" id="rp-reasons">
+      <button type="button" class="btn-ghost btn-sm" data-reason="harassment">Harassment or bullying</button>
+      <button type="button" class="btn-ghost btn-sm" data-reason="hate">Hate speech</button>
+      <button type="button" class="btn-ghost btn-sm" data-reason="sexual">Sexual content</button>
+      <button type="button" class="btn-ghost btn-sm" data-reason="spam">Spam or scams</button>
+      <button type="button" class="btn-ghost btn-sm" data-reason="cheating">Cheating</button>
+      <button type="button" class="btn-ghost btn-sm" data-reason="other">Something else</button>
+    </div>
+    <input id="rp-note" maxlength="200" placeholder="What happened? (optional)" autocomplete="off">
+    <label class="small check"><input type="checkbox" id="rp-mute" checked> Also mute them for me</label>
+    <div class="row">
+      <button id="rp-send" type="button" disabled>Send report</button>
+      <button id="rp-close" class="btn-ghost" type="button">Cancel</button>
+    </div>
+  </section>
+
+  <section id="invite" class="card sheet" hidden>
+    <h2 id="iv-text"></h2>
+    <p class="small">Crews share quest progress and can take on team quests together.</p>
+    <div class="row">
+      <button id="iv-yes" type="button">Join crew</button>
+      <button id="iv-no" class="btn-ghost" type="button">No thanks</button>
+    </div>
+  </section>
+  <div id="joystick"><div class="knob"></div></div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

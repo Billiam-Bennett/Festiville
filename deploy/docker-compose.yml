@@ -1,0 +1,36 @@
+# FestiVille on one server, with automatic HTTPS.
+# On the server, in the festiville folder:
+#   1. Point your domain's DNS (an A record) at this server's IP address.
+#   2. Put your domain in deploy/.env:   echo DOMAIN=play.yourfestival.com > deploy/.env
+#   3. docker compose -f deploy/docker-compose.yml up -d --build
+# Caddy gets a free HTTPS certificate from Let's Encrypt and passes game traffic (including WebSockets)
+# to the game server, which isn't reachable from outside on its own.
+services:
+  festiville:
+    build: ..
+    restart: unless-stopped
+    environment:
+      FV_TRUST_PROXY: "1"             # rate limits use players' real IPs, as passed on by Caddy
+      FV_ADMIN_KEY: ${FV_ADMIN_KEY:-}
+      FV_SIGNUPS_PER_HOUR: ${FV_SIGNUPS_PER_HOUR:-}   # setup-server.sh raises this for load tests; empty = default (10)
+    volumes:
+      - festiville-data:/app/data
+    expose:
+      - "2567"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [festiville]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  festiville-data:
+  caddy-data:

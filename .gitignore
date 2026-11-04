@@ -1,0 +1,7 @@
+node_modules/
+# Vendor listings and edit-key hashes live here. Back it up; don't commit it.
+data/
+# Server secrets (domain, admin key) and backups made by deploy/backup.sh.
+.env
+festiville-data-*.tar.gz
+*.log
