@@ -3,7 +3,7 @@
 import { Room, ServerError, ErrorCode } from "colyseus";
 import { FestivalState, Player, Crew } from "./schema.js";
 import { QuestSystem } from "./quests.js";
-import { resolveLook, resolveAccessories } from "./entitlements.js";
+import { resolveAppearance } from "./entitlements.js";
 import { vendorStore } from "./vendors.js";
 import { ChatSystem } from "./chat.js";
 import { accountStore } from "./accounts.js";
@@ -78,21 +78,14 @@ export class FestivalRoom extends Room {
       if (p && EMOTES.has(name)) p.emote = name;
     });
 
-    // Change your character and accessories mid-game (the "Looks" button). The server re-checks
-    // entitlements (premium looks/accessories need an unlock) and saves the choice to the account.
-    this.onMessage("appearance", (client, raw = {}) => {
+    // Change your character and accessories mid-game (the 👕 button). The browser sends a classic
+    // { look } or a parts-based { recipe } (shared/parts.js), plus { accessories }. The server re-checks
+    // entitlements (premium looks/parts/accessories need an unlock) and saves the result to the account.
+    this.onMessage("appearance", (client, raw) => {
       const p = this.state.players.get(client.sessionId);
       const account = this.account(client.sessionId);
-      if (!p || !account) return;
-      if (typeof raw.look === "string" && raw.look) {
-        const look = resolveLook(account, raw.look);
-        if (p.look !== look) { p.look = look; accountStore().setLook(account.id, look); }
-      }
-      if (raw.accessories !== undefined) {
-        const acc = resolveAccessories(account, raw.accessories);
-        const str = acc.join(",");
-        if (p.accessories !== str) { p.accessories = str; accountStore().setAccessories(account.id, acc); }
-      }
+      if (!p || !account || !raw || typeof raw !== "object") return;
+      this.applyAppearance(p, account, resolveAppearance(account, raw, { look: p.look, recipe: p.recipe, accessories: p.accessories }));
     });
 
     // Chat: the server decides who hears it (nearby players, or your crew) and enforces rate limits.
@@ -193,6 +186,17 @@ export class FestivalRoom extends Room {
       const { to, type, ...msg } = ev;
       this.clients.find((c) => c.sessionId === to)?.send(type, msg);
     }
+  }
+
+  // Put a resolved appearance on a player (only changed fields are synced) and save it as their default.
+  applyAppearance(p, account, { look, recipe, accessories }) {
+    if (p.look !== look) p.look = look;
+    if (p.recipe !== recipe) p.recipe = recipe;
+    const acc = accessories.join(",");
+    if (p.accessories !== acc) p.accessories = acc;
+    accountStore().setLook(account.id, look);
+    accountStore().setRecipe(account.id, recipe);
+    accountStore().setAccessories(account.id, accessories);
   }
 
   account(sessionId) {
@@ -337,12 +341,8 @@ export class FestivalRoom extends Room {
     p.z = spawn.z;
     p.name = account.username;
     p.staff = accountStore().isStaff(account);
-    const wanted = typeof options.look === "string" && options.look ? options.look : account.look;
-    p.look = resolveLook(account, wanted);
-    accountStore().setLook(account.id, p.look);
-    const acc = resolveAccessories(account, options.accessories ?? account.accessories);
-    p.accessories = acc.join(",");
-    accountStore().setAccessories(account.id, acc);
+    // What they asked for on the join screen, else what they wore last time (saved on the account).
+    this.applyAppearance(p, account, resolveAppearance(account, options, { look: account.look, recipe: account.recipe ?? "", accessories: account.accessories }));
     p.skinTone = cleanColor(options.skinTone, p.skinTone);
     p.shirtColor = cleanColor(options.shirtColor, p.shirtColor);
     this.state.players.set(client.sessionId, p);

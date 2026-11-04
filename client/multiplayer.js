@@ -43,7 +43,7 @@ export async function connectMultiplayer({ url, THREE, scene, localObject, getIn
   const room = await client.joinOrCreate("festival", profile);
   const makeAvatar = createRemoteAvatar ?? ((p) => defaultAvatar(THREE, p));
   // What a player looks like right now; when this changes we rebuild their avatar (the "Looks" button).
-  const sigOf = (p) => `${p.look}|${p.accessories}`;
+  const sigOf = (p) => `${p.look}|${p.recipe ?? ""}|${p.accessories}`;
 
   // localObject can be a function that builds your avatar once the server has answered (e.g. with your look).
   if (typeof localObject === "function") {

@@ -2,7 +2,8 @@
 //
 //   npm run account -- list                              every account, with badges and unlocks
 //   npm run account -- info <username>
-//   npm run account -- unlock <username> <look>          give a premium look (e.g. bigvegas)
+//   npm run account -- unlock <username> <look>          give a premium look (e.g. bigvegas), accessory
+//                                                        (e.g. wings) or character part (e.g. hair_afro)
 //   npm run account -- lock <username> <look>            take it away again
 //   npm run account -- reset-password <username> <new password>   also signs them out everywhere
 //   npm run account -- sign-out <username>               end all their sign-ins
@@ -21,6 +22,7 @@
 import { AccountStore } from "../server/accounts.js";
 import { CHARACTERS, lookById } from "../shared/characters.js";
 import { ACCESSORIES, accessoryById } from "../shared/accessories.js";
+import { PARTS, partById } from "../shared/parts.js";
 import { ModerationStore, REASONS, untilText } from "../server/moderation.js";
 
 const [cmd, username, arg, ...rest] = process.argv.slice(2);
@@ -28,7 +30,7 @@ const mod = new ModerationStore();
 const store = new AccountStore();
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const flags = (a) => [a.role === "admin" && "ORGANIZER", a.role === "mod" && "STAFF", store.isMuted(a) && `muted ${untilText(a.mutedUntil)}`, store.isBanned(a) && `BANNED ${untilText(a.bannedUntil)}`].filter(Boolean).join(", ");
-const show = (a) => console.log(`${a.username.padEnd(18)} badges: ${a.badges.join(", ") || "-"}   unlocked: ${a.unlocks.join(", ") || "-"}   last look: ${a.look || "-"}   joined: ${a.createdAt.slice(0, 10)}${flags(a) ? "   [" + flags(a) + "]" : ""}`);
+const show = (a) => console.log(`${a.username.padEnd(18)} badges: ${a.badges.join(", ") || "-"}   unlocked: ${a.unlocks.join(", ") || "-"}   last look: ${a.recipe ? "parts " + a.recipe : a.look || "-"}   joined: ${a.createdAt.slice(0, 10)}${flags(a) ? "   [" + flags(a) + "]" : ""}`);
 // "30" -> 30 (minutes or days), "forever" -> 0
 const amount = (v, what) => {
   if (v === "forever") return 0;
@@ -42,6 +44,7 @@ const printReport = (r) => {
   if (r.chat.length) for (const l of r.chat) console.log(`    ${l.at.slice(11, 16)} [${l.channel}] ${r.target.name}: ${l.text}`);
   else console.log("    (no recent chat from them)");
 };
+const unlockableById = (id) => lookById(id) || accessoryById(id) || partById(id);   // same as server/entitlements.js
 const need = () => store.findByName(username) ?? fail(`No account called "${username}".`);
 
 switch (cmd) {
@@ -55,9 +58,9 @@ switch (cmd) {
   case "unlock":
   case "lock": {
     need();
-    // Works for premium characters AND premium accessories (hats, wings, …).
-    const item = lookById(arg) || accessoryById(arg);
-    if (!item) fail(`No character or accessory called "${arg}".\n  Characters: ${CHARACTERS.filter((c) => c.tier === "premium").map((c) => c.id).join(", ")}\n  Accessories: ${ACCESSORIES.filter((a) => a.tier === "premium").map((a) => a.id).join(", ")}`);
+    // Works for premium characters, accessories (hats, wings, …) and character parts (hair, clothes, …).
+    const item = unlockableById(arg);
+    if (!item) fail(`No character, accessory or part called "${arg}".\n  Characters: ${CHARACTERS.filter((c) => c.tier === "premium").map((c) => c.id).join(", ")}\n  Accessories: ${ACCESSORIES.filter((a) => a.tier === "premium").map((a) => a.id).join(", ")}\n  Parts: ${PARTS.filter((p) => p.tier === "premium").map((p) => p.id).join(", ")}`);
     if (item.tier !== "premium") fail(`${item.name} is already free for everyone.`);
     store[cmd](username, item.id);
     console.log(`${cmd === "unlock" ? "Unlocked" : "Locked"} ${item.name} for ${username}. They'll see it next time they join.`);

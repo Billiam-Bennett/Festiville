@@ -75,6 +75,23 @@ test("progress is saved: badges, last look, unlocks; and picked up by another co
   } finally { done(); }
 });
 
+test("a built character (recipe) and part unlocks are saved on the account", async () => {
+  const { store, dir, done } = tempStore();
+  try {
+    const { account } = await store.signup("Builder", "tacos-forever");
+    assert.equal(store.public(store.get(account.id)).recipe, "");
+    const recipe = "male;4;hair=hair_afro:2;top=top_tank:1;bottom=bottom_jeans:0";
+    store.setRecipe(account.id, recipe);
+    store.unlock("builder", "hair_afro");                                                 // npm run account -- unlock builder hair_afro
+    const other = new AccountStore({ dir });
+    assert.equal(other.get(account.id).recipe, recipe);
+    assert.deepEqual(other.get(account.id).unlocks, ["hair_afro"]);
+    assert.equal(other.public(other.get(account.id)).recipe, recipe);
+    store.setRecipe(account.id, "");                                                     // back to a classic character
+    assert.equal(new AccountStore({ dir }).get(account.id).recipe, "");
+  } finally { done(); }
+});
+
 test("premium looks need an unlock; free looks don't", () => {
   const acct = { unlocks: ["bigvegas"] };
   assert.ok(canUseLook(null, "bryce"));

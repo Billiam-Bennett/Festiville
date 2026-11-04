@@ -10,6 +10,8 @@ import { setupChat } from "./chat-ui.js";
 import { setupModeration } from "./moderation-ui.js";
 import { setupReports } from "./reports-ui.js";
 import { ACCESSORIES, SLOTS, accessoryById, normalizeAccessories } from "../shared/accessories.js";
+import { normalizeRecipe, partById, bodyById } from "../shared/parts.js";
+import { createLookBuilder, createPreview } from "./look-builder.js";
 import { createCameraRig } from "./camera.js";
 import { applyLayout } from "../shared/venue.js";
 
@@ -103,7 +105,14 @@ function showSignedIn(a) {
   try { if (!saved.length) saved = (localStorage.getItem("fv-accessories") || "").split(","); } catch {}
   chosen = new Set(normalizeAccessories(saved).filter((id) => accUnlocked(accessoryById(id))));
   renderAccessories();
-  }
+  // A saved recipe means they last played a character they built; otherwise the classic picker.
+  let localRecipe = "";
+  try { localRecipe = localStorage.getItem("fv-recipe") || ""; } catch {}
+  if (normalizeRecipe(a.recipe || localRecipe)) pkBuilder.set(a.recipe || localRecipe);
+  pkBuilder.refresh();   // lock notes depend on the account's unlocks
+  setJoinMode(a.recipe ? "parts" : "classic");
+  showLook();
+}
 function showSignedOut(message = "") {
   account = null;
   $("auth").hidden = false;
@@ -152,9 +161,43 @@ function showLook() {
 }
 function refreshPreview() {
   if (preview) { preview.userData.dispose?.(); scene.remove(preview); }
-  preview = makeAvatar({ name: account?.username || "You", look: CHARACTERS[lookIndex].id, accessories: [...chosen] });
+  preview = makeAvatar({ name: account?.username || "You", look: CHARACTERS[lookIndex].id, recipe: joinRecipe(), accessories: [...chosen] });
   scene.add(preview);
 }
+
+// --- Build your own (parts-based characters, shared/parts.js) ---
+// "classic" = a whole character from the picker above; "parts" = a recipe from the builder.
+let joinMode = "classic";
+const partUnlocked = (p) => !!p && (p.tier !== "premium" || !!account?.unlocks?.includes(p.id));
+// Part files arrive separately from the code. Until a body's files are installed, say what others will see.
+const partsMissing = {};
+function partsNote(recipe, fallbackName, builder) {
+  const body = recipe.split(";")[0];
+  if (!(body in partsMissing)) {
+    partsMissing[body] = false;
+    cast.partsReady(body).then((ok) => { if (!ok) { partsMissing[body] = true; builder()?.refresh(); } });
+  }
+  return partsMissing[body] ? `The ${bodyById(body)?.name.toLowerCase() ?? body} body's part files aren't installed on this server yet, so you'll appear as ${fallbackName} (your classic character) for now.` : "";
+}
+const pkBuilder = createLookBuilder({
+  host: $("pk-builder"),
+  isUnlocked: partUnlocked,
+  onChange: (recipe) => { try { localStorage.setItem("fv-recipe", recipe); } catch {} refreshPreview(); },
+  explain: (recipe) => partsNote(recipe, CHARACTERS[lookIndex].name, () => pkBuilder),
+});
+try { const r = localStorage.getItem("fv-recipe"); if (normalizeRecipe(r)) pkBuilder.set(r); } catch {}
+const joinRecipe = () => (joinMode === "parts" ? pkBuilder.get() : "");
+function setJoinMode(mode) {
+  joinMode = mode;
+  $("pk-classic").setAttribute("aria-selected", String(mode === "classic"));
+  $("pk-build").setAttribute("aria-selected", String(mode === "parts"));
+  // The classic picker stays visible in "parts" mode only as the fallback note; hide it to keep things simple.
+  $("pk-picker").hidden = mode !== "classic";
+  $("pk-builder").hidden = mode !== "parts";
+  if (account) refreshPreview();
+}
+$("pk-classic").onclick = () => setJoinMode("classic");
+$("pk-build").onclick = () => setJoinMode("parts");
 $("pk-prev").onclick = () => { lookIndex = (lookIndex + CHARACTERS.length - 1) % CHARACTERS.length; showLook(); };
 $("pk-next").onclick = () => { lookIndex = (lookIndex + 1) % CHARACTERS.length; showLook(); };
 
@@ -193,14 +236,47 @@ let removedText = "";   // why staff removed you, if they did
 if (params.has("debug")) window.__gs = { THREE, scene, camera, get mp() { return mp; } };
 
 // --- Change your look mid-game (the 👕 button) ---
-let lkIndex = 0, lkChosen = new Set();
+let lkIndex = 0, lkChosen = new Set(), lkMode = "classic";
+let lkPreview = null;
+const lkBuilder = createLookBuilder({
+  host: $("lk-builder"),
+  isUnlocked: partUnlocked,
+  onChange: () => showLkPreview(),
+  explain: (recipe) => partsNote(recipe, CHARACTERS[lkIndex].name, () => lkBuilder),
+});
+function setLkMode(mode) {
+  lkMode = mode;
+  $("lk-classic").setAttribute("aria-selected", String(mode === "classic"));
+  $("lk-build").setAttribute("aria-selected", String(mode === "parts"));
+  $("lk-classic-field").hidden = mode !== "classic";
+  $("lk-builder").hidden = mode !== "parts";
+  showLkPreview();
+}
+$("lk-classic").onclick = () => setLkMode("classic");
+$("lk-build").onclick = () => setLkMode("parts");
+// Live 3D preview of what you're picking, in its own little canvas (WebGL can be missing; then skip it).
+function showLkPreview() {
+  if (!lkPreview) { try { lkPreview = createPreview(THREE, $("lk-preview")); } catch { return; } }
+  $("lk-preview").hidden = false;
+  $("looks").classList.add("wide");
+  lkPreview.show(makeAvatar({ name: account?.username || "You", look: CHARACTERS[lkIndex].id, recipe: lkMode === "parts" ? lkBuilder.get() : "", accessories: [...lkChosen] }));
+  lkPreview.start();
+}
+function closeLooks() {
+  $("looks").hidden = true;
+  lkPreview?.stop();
+  lkPreview?.show(null);
+}
 function openLooks() {
   if (!mp) return;
   const p = mp.room.state.players.get(mp.room.sessionId);
   lkIndex = Math.max(0, CHARACTERS.findIndex((c) => c.id === p?.look));
   lkChosen = new Set(normalizeAccessories(p?.accessories || "").filter((id) => accUnlocked(accessoryById(id))));
+  if (p?.recipe) lkBuilder.set(p.recipe);
+  else { try { const r = localStorage.getItem("fv-recipe"); if (normalizeRecipe(r)) lkBuilder.set(r); } catch {} }
   renderLooks();
   $("looks").hidden = false;
+  setLkMode(p?.recipe ? "parts" : "classic");
 }
 function renderLooks() {
   const c = CHARACTERS[lkIndex];
@@ -221,27 +297,33 @@ function renderLooks() {
       if (lkChosen.has(a.id)) lkChosen.delete(a.id);
       else { for (const id of [...lkChosen]) if (accessoryById(id)?.slot === a.slot) lkChosen.delete(id); lkChosen.add(a.id); }
       renderLooks();
+      showLkPreview();
     };
     host.append(b);
   }
 }
-$("lk-prev").onclick = () => { lkIndex = (lkIndex + CHARACTERS.length - 1) % CHARACTERS.length; renderLooks(); };
-$("lk-next").onclick = () => { lkIndex = (lkIndex + 1) % CHARACTERS.length; renderLooks(); };
-$("lk-close").onclick = () => ($("looks").hidden = true);
-$("looks-btn").onclick = () => ($("looks").hidden ? openLooks() : ($("looks").hidden = true));
+$("lk-prev").onclick = () => { lkIndex = (lkIndex + CHARACTERS.length - 1) % CHARACTERS.length; renderLooks(); showLkPreview(); };
+$("lk-next").onclick = () => { lkIndex = (lkIndex + 1) % CHARACTERS.length; renderLooks(); showLkPreview(); };
+$("lk-close").onclick = closeLooks;
+$("looks-btn").onclick = () => ($("looks").hidden ? openLooks() : closeLooks());
 $("lk-apply").onclick = () => {
   if (!mp) return;
+  // In "Build your own" the classic look is still sent: it's what people without the part files see.
   const look = CHARACTERS[lkIndex].id, accessories = [...lkChosen];
-  mp.room.send("appearance", { look, accessories });
-  try { localStorage.setItem("fv-look", look); localStorage.setItem("fv-accessories", accessories.join(",")); } catch {}
-  $("looks").hidden = true;
+  const recipe = lkMode === "parts" ? lkBuilder.get() : "";
+  mp.room.send("appearance", { look, recipe, accessories });
+  try {
+    localStorage.setItem("fv-look", look); localStorage.setItem("fv-accessories", accessories.join(","));
+    if (recipe) localStorage.setItem("fv-recipe", recipe);
+  } catch {}
+  closeLooks();
 };
 
 // --- Join ---
 $("join-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!account) return submitAuth();
-  const profile = { token, look: CHARACTERS[lookIndex].id, name: account.username, accessories: [...chosen] };
+  const profile = { token, look: CHARACTERS[lookIndex].id, recipe: joinRecipe(), name: account.username, accessories: [...chosen] };
   try { localStorage.setItem("fv-look", profile.look); localStorage.setItem("fv-accessories", profile.accessories.join(",")); } catch {}
 
   $("join-btn").disabled = true;
@@ -256,7 +338,7 @@ $("join-form").addEventListener("submit", async (e) => {
       localObject: (room) => { me = makeAvatar(room.state.players.get(room.sessionId) ?? profile); scene.add(me); return me; },
       onLocalRebuilt: (obj) => { me = obj; },   // the Looks button changed our avatar; keep our reference current
       getInput: controls.getInput,
-      profile: { token: profile.token, look: profile.look, accessories: profile.accessories },
+      profile: { token: profile.token, look: profile.look, recipe: profile.recipe, accessories: profile.accessories },
       createRemoteAvatar: (p) => makeAvatar(p),
     });
     mp.room.onMessage("removed", (m) => (removedText = m.text));
@@ -268,6 +350,14 @@ $("join-form").addEventListener("submit", async (e) => {
     chat = setupChat({ THREE, mp, quests });
     moderation = setupModeration({ mp, quests, chat, account });
     setupReports({ mp, quests, isStaff: moderation.isStaff });
+    const gotRecipe = mp.room.state.players.get(mp.room.sessionId)?.recipe ?? "";
+    if (profile.recipe && gotRecipe !== normalizeRecipe(profile.recipe)) {
+      // The server swapped premium parts this account hasn't unlocked (or doesn't know a part yet).
+      const lost = profile.recipe.split(";").slice(2).map((t) => t.split("=")[1]?.split(":")[0]).filter((id) => id && !gotRecipe.includes(`=${id}:`));
+      const names = lost.map((id) => partById(id)?.name ?? id).join(", ");
+      if (!gotRecipe) quests.toast("This server doesn't support built characters yet, so you're your classic character. Restart the server (npm start) after updating.", "error", 9000);
+      else quests.toast(names ? `${names}: premium, so you got the default for now.` : "The server adjusted your character.");
+    }
     const gotLook = mp.room.state.players.get(mp.room.sessionId)?.look;
     if (gotLook && gotLook !== profile.look) {
       const wanted = lookById(profile.look), got = lookById(gotLook)?.name ?? "the default look";

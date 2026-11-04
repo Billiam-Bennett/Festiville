@@ -18,7 +18,7 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
 
   // ---------- Quest givers ----------
   const givers = GIVERS.map((g) => {
-    const obj = makeAvatar({ name: g.name, look: g.look });
+    const obj = makeAvatar({ name: g.name, look: g.look, recipe: g.recipe });
     obj.position.set(g.x, 0, g.z);
     obj.rotation.y = g.rotY ?? Math.atan2(-g.x, -g.z);   // as turned in the builder, else face the middle
     obj.userData.setTag?.(g.name, g.role);
@@ -33,7 +33,7 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
   // Silent characters scattered around to make the world feel lived-in. They just idle in place;
   // the DJ dances.
   const ambient = AMBIENT.filter((a) => !a.hidden).map((a) => {
-    const obj = makeAvatar({ name: a.name, look: a.look });
+    const obj = makeAvatar({ name: a.name, look: a.look, recipe: a.recipe });
     obj.position.set(a.x, 0, a.z);
     obj.rotation.y = a.rotY ?? Math.atan2(-a.x, -a.z);
     obj.userData.setTag?.(a.name, a.role);
