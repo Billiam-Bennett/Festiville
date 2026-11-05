@@ -87,7 +87,8 @@ export const UNLOCK_PRICES = {
   // Wear: accessories
   shutters: 150, heartglasses: 200, tophat: 250, totem: 350, halo: 400, wings: 500,
   // Looks: character parts
-  hair_afro: 200, bottom_cargo: 200, top_hoodie: 250, shoes_platform: 250,
+  hair_afro: 200, hair_frbraid: 200, hair_headband: 200,
+  bottom_cargo: 200, bottom_maxi: 200, top_sweater: 250, shoes_platform: 250, shoes_tall: 250,
   // Looks: classic characters
   bigvegas: 800, jackie: 800, adam: 800,
 };
