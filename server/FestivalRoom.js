@@ -36,8 +36,7 @@ export function takeTickStats() {
   return out;
 }
 import { TICK_RATE, sanitizeInput, applyInput, randomSpawn } from "../shared/sim.js";
-
-const EMOTES = new Set(["", "dance"]);
+import { newEmoteState, startEmote, updateEmote } from "../shared/emotes.js";
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const cleanColor = (c, fallback) => (typeof c === "string" && HEX.test(c) ? c : fallback);
 
@@ -52,6 +51,7 @@ export class FestivalRoom extends Room {
     this.chat = new ChatSystem();
     this.accountOf = new Map();   // sessionId -> account id
     this.recentChat = new Map();  // sessionId -> that player's last few chat lines (evidence for reports)
+    this.emotes = new Map();      // sessionId -> emote state (shared/emotes.js); emote + emoteSeq are copied into the schema
     this.sinceBanCheck = 0;
     this.elapsed = 0;          // seconds since the room opened (NOT this.clock: Colyseus uses that name)
 
@@ -73,9 +73,12 @@ export class FestivalRoom extends Room {
       this.inputs.set(client.sessionId, input);
     });
 
+    // Emotes (shared/emotes.js): "dance", "wave", "jump", … to start one, "" to stop. Moving ends most of
+    // them, one-shots end on their own, and the server tells everyone (emote + emoteSeq in the schema).
     this.onMessage("emote", (client, name) => {
-      const p = this.state.players.get(client.sessionId);
-      if (p && EMOTES.has(name)) p.emote = name;
+      const input = this.inputs.get(client.sessionId);
+      const moving = !!input && (input.x !== 0 || input.z !== 0);
+      if (startEmote(this.emoteState(client.sessionId), name, { now: this.elapsed, moving })) this.syncEmote(client.sessionId);
     });
 
     // Change your character and accessories mid-game (the 👕 button). The browser sends a classic
@@ -144,9 +147,13 @@ export class FestivalRoom extends Room {
       const input = this.inputs.get(sessionId);
       if (!input) return;
       applyInput(player, input, dt);
-      if (player.emote && (input.x !== 0 || input.z !== 0)) player.emote = "";   // walking off ends the dance
       player.lastSeq = input.seq;
     });
+    // One-shot emotes end on time; walking off ends a dance (or stands you up).
+    for (const [id, st] of this.emotes) {
+      const input = this.inputs.get(id);
+      if (updateEmote(st, { now: this.elapsed, moving: !!input && (input.x !== 0 || input.z !== 0) })) this.syncEmote(id);
+    }
     this.quests.tick(this.positions(), this.elapsed, dt);
     this.syncQuests();
   }
@@ -197,6 +204,19 @@ export class FestivalRoom extends Room {
     accountStore().setLook(account.id, look);
     accountStore().setRecipe(account.id, recipe);
     accountStore().setAccessories(account.id, accessories);
+  }
+
+  emoteState(sessionId) {
+    let st = this.emotes.get(sessionId);
+    if (!st) { st = newEmoteState(); this.emotes.set(sessionId, st); }
+    return st;
+  }
+
+  syncEmote(sessionId) {
+    const p = this.state.players.get(sessionId), st = this.emotes.get(sessionId);
+    if (!p || !st) return;
+    if (p.emote !== st.emote) p.emote = st.emote;
+    if (p.emoteSeq !== st.emoteSeq) p.emoteSeq = st.emoteSeq;
   }
 
   account(sessionId) {
@@ -364,6 +384,7 @@ export class FestivalRoom extends Room {
     if (this.state.players.has(client.sessionId)) serverStats.players--;
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
+    this.emotes.delete(client.sessionId);
     this.quests.leave(client.sessionId);
     this.chat.leave(client.sessionId);
     this.recentChat.delete(client.sessionId);

@@ -10,7 +10,8 @@ export class Player extends Schema {
     this.z = 0;
     this.rotY = 0;
     this.lastSeq = 0;          // last input the server applied (for client reconciliation)
-    this.emote = "";           // "" or "dance"; everyone sees it
+    this.emote = "";           // "" or an emote id from shared/emotes.js ("dance", "wave", "jump", …); everyone sees it
+    this.emoteSeq = 0;         // counts up each time an emote starts, so repeating one replays it for everyone
     this.crewId = "";          // "" when not in a crew
     this.badges = "";          // comma-separated badge names earned from quests
     this.look = "";            // character id from shared/characters.js (also the fallback when a recipe can't be shown)
@@ -29,6 +30,7 @@ defineTypes(Player, {
   rotY: "number",
   lastSeq: "number",
   emote: "string",
+  emoteSeq: "number",
   crewId: "string",
   badges: "string",
   look: "string",

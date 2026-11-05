@@ -9,6 +9,7 @@ import { setupVenue } from "./venue-ui.js";
 import { setupChat } from "./chat-ui.js";
 import { setupModeration } from "./moderation-ui.js";
 import { setupReports } from "./reports-ui.js";
+import { setupEmotes } from "./emote-ui.js";
 import { ACCESSORIES, SLOTS, accessoryById, normalizeAccessories } from "../shared/accessories.js";
 import { normalizeRecipe, partById, bodyById } from "../shared/parts.js";
 import { createLookBuilder, createPreview } from "./look-builder.js";
@@ -350,6 +351,8 @@ $("join-form").addEventListener("submit", async (e) => {
     chat = setupChat({ THREE, mp, quests });
     moderation = setupModeration({ mp, quests, chat, account });
     setupReports({ mp, quests, isStaff: moderation.isStaff });
+    emotes?.dispose();
+    emotes = setupEmotes({ mp, button: $("dance") });
     const gotRecipe = mp.room.state.players.get(mp.room.sessionId)?.recipe ?? "";
     if (profile.recipe && gotRecipe !== normalizeRecipe(profile.recipe)) {
       // The server swapped premium parts this account hasn't unlocked (or doesn't know a part yet).
@@ -402,20 +405,11 @@ $("join-form").addEventListener("submit", async (e) => {
   }
 })();
 
-// Dance emote: button or the E key. Walking away ends it.
-let dancing = false;
-function toggleDance() {
-  if (!mp) return;
-  dancing = !dancing;
-  mp.emote(dancing ? "dance" : "");
-}
-$("dance").addEventListener("click", toggleDance);
+// Emotes (the Emote button, keys 1-9, Space to jump, E to dance): client/emote-ui.js.
+let emotes = null;
 // After you click or tap a button, let go of it: otherwise pressing Enter (to chat) "clicks" it again.
 // Keyboard presses (detail 0) keep focus, so keyboard-only players can still tab through buttons.
 document.addEventListener("click", (e) => { if (e.detail > 0) e.target.closest?.("button")?.blur(); }, true);
-addEventListener("keydown", (e) => {
-  if (e.code === "KeyE" && document.activeElement?.tagName !== "INPUT") toggleDance();
-});
 
 function showDisconnected(code) {
   // 4100: this account signed in from another window or device, which takes over.
@@ -439,10 +433,7 @@ renderer.setAnimationLoop(() => {
     moderation?.update();
     rig.update(dt, me.position);   // camera follows you; scroll / pinch / +/- to zoom
     $("hud-online").textContent = `${mp.onlineCount()} online`;
-    // Keep the Dance button in sync with the server (moving ends the dance).
-    const myEmote = mp.room.state?.players?.get(mp.room.sessionId)?.emote ?? "";
-    dancing = myEmote === "dance";
-    $("dance").setAttribute("aria-pressed", dancing);
+    emotes?.update();   // keep the Emote menu in sync with the server (moving ends a dance)
   } else {
     // Join screen: slowly circle the character you're picking.
     // Frame the character beside the form on wide screens, above it on phones.

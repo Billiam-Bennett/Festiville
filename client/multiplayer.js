@@ -98,7 +98,7 @@ export async function connectMultiplayer({ url, THREE, scene, localObject, getIn
     turnToward(localObject, local.rotY, dt);
     const mySpeed = dt > 0 ? Math.hypot(local.x - lastLocal.x, local.z - lastLocal.z) / dt : 0;
     lastLocal.x = local.x; lastLocal.z = local.z;
-    localObject.userData.animate?.(dt, mySpeed, me?.emote);
+    localObject.userData.animate?.(dt, mySpeed, me?.emote, me?.emoteSeq);
 
     // 3. Add/update remote players.
     const seen = new Set();
@@ -129,7 +129,7 @@ export async function connectMultiplayer({ url, THREE, scene, localObject, getIn
       r.object.position.z += (r.target.z - oz) * k;
       turnToward(r.object, r.target.rotY, dt);
       const speed = dt > 0 ? Math.hypot(r.object.position.x - ox, r.object.position.z - oz) / dt : 0;
-      r.object.userData.animate?.(dt, speed, p.emote);
+      r.object.userData.animate?.(dt, speed, p.emote, p.emoteSeq);
     });
 
     // 4. Remove players who left.
@@ -144,7 +144,8 @@ export async function connectMultiplayer({ url, THREE, scene, localObject, getIn
     room.leave();
   }
 
-  // Emotes: "dance" to start, "" to stop. Moving also stops it (the server clears it).
+  // Emotes (shared/emotes.js): an id like "dance" or "wave" to start, "" to stop. Moving stops most
+  // of them and one-shots end on their own (the server clears them).
   const emote = (name) => room.send("emote", name);
 
   // The 3D object for any player (yourself included), for tapping, crew rings, etc.

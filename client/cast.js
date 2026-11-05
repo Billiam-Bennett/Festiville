@@ -50,7 +50,7 @@ export function createCast(THREE, { placeholder }) {
       inner.userData.dispose?.();
       inner = next;
       inner.userData.setTag?.(...tag);
-      if (emoteArgs) inner.userData.animate?.(0, emoteArgs[1], emoteArgs[2]);
+      if (emoteArgs) inner.userData.animate?.(0, emoteArgs[1], emoteArgs[2], emoteArgs[3]);
       root.add(inner);
     };
     const classic = () => load(root.userData.look).then((kit) => kit && !root.userData.disposed && swap(kit.create({ ...p, name: tag[0] })));

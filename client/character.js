@@ -4,13 +4,14 @@
 // lightweight copy per player that shares the mesh and textures, so a crowd stays affordable.
 //
 // Each character picks its animation from how fast it's moving:
-//   standing still → Idle, slow → Walk, fast → Run, and "dance" emote → Dance.
+//   standing still → Idle, slow → Walk, fast → Run, plus emotes (shared/emotes.js: Dance, Wave, Jump, Sit…).
 //
 // To use your own Mixamo character, see README → "Use your own Mixamo character".
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { buildAccessory } from "./accessories.js";
 import { normalizeAccessories } from "../shared/accessories.js";
+import { emoteById } from "../shared/emotes.js";
 
 // Mixamo bones are named "mixamorigHead" (sometimes with a number, "mixamorig2Head"); normalize so
 // we can find them on any rig.
@@ -103,19 +104,58 @@ export function rigAvatar(THREE, model, clips, profile = {}, height = TARGET_HEI
     }
   }
 
-  // Called every frame by multiplayer.js with the character's measured speed (m/s).
-  root.userData.animate = (dt, speed, emote) => {
+  // ---------- Emotes (shared/emotes.js) ----------
+  // The server says which emote a player is doing and bumps emoteSeq each time one starts. We play
+  // its intro once (sitting down), then its clip; when it ends standing still, its outro (standing up).
+  const baseY = model.position.y;
+  const playing = { id: "", seq: -1, t: 0, outro: null };
+  const lengthOf = (k) => actions[k]?.getClip().duration ?? 0;
+  let currentKey = "";
+
+  // Which clip to show right now (and a key that changes whenever it should restart).
+  function pick(moving, emote, seq) {
+    const def = emoteById(emote);
+    if (emote !== playing.id || seq !== playing.seq) {
+      const prev = emoteById(playing.id);
+      const wasPlaying = prev && (prev.loop || playing.t < (prev.duration ?? 0));
+      playing.outro = !def && wasPlaying && prev.outro && actions[prev.outro] ? prev.outro : null;
+      Object.assign(playing, { id: emote, seq, t: 0 });
+    }
+    if (def && (!moving || def.moving)) {
+      if (def.intro && actions[def.intro] && playing.t < lengthOf(def.intro)) return { k: def.intro, once: true, phase: "in" };
+      const k = actions[def.clip] ? def.clip : actions[def.fallback] ? def.fallback : null;
+      if (k) return { k, once: !def.loop && lengthOf(k) >= (def.duration ?? 0) - 0.1, phase: "main" };
+    } else if (playing.outro && !moving && playing.t < lengthOf(playing.outro)) {
+      return { k: playing.outro, once: true, phase: "out" };
+    }
+    return null;
+  }
+
+  // Called every frame by multiplayer.js with the character's measured speed (m/s) and its emote.
+  root.userData.animate = (dt, speed, emote = "", emoteSeq = 0) => {
     smoothSpeed += (speed - smoothSpeed) * Math.min(1, dt * 10);
-    let want = smoothSpeed < 0.35 ? (emote === "dance" && actions.Dance ? "Dance" : "Idle")
-      : smoothSpeed < 4 ? "Walk" : "Run";
+    playing.t += dt;
+    const moving = smoothSpeed >= 0.35;
+    const em = pick(moving, emote || "", emoteSeq ?? 0);
+    let want = em?.k ?? (!moving ? "Idle" : smoothSpeed < 4 ? "Walk" : "Run");
     if (!actions[want]) want = actions.Walk ? "Walk" : "Idle";
     const next = actions[want];
-    if (next && next !== current) {
-      next.reset().play();
-      current?.crossFadeTo(next, FADE, false);
+    const key = em ? `${want}|${playing.id}|${playing.seq}|${em.phase}` : want;
+    if (next && key !== currentKey) {
+      next.setLoop(em?.once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
+      next.clampWhenFinished = !!em?.once;
+      if (next === current) next.reset();
+      else {
+        next.reset().play();
+        current?.crossFadeTo(next, em?.phase === "out" || currentKey.includes("|out") ? 0.4 : FADE, false);
+      }
       current = next;
+      currentKey = key;
     }
     if (next) next.timeScale = ANIM_SPEED[want] ? Math.min(1.8, Math.max(0.7, smoothSpeed / ANIM_SPEED[want])) : 1;
+    // Characters without a Jump animation (classic ones) still hop.
+    const hop = emote === "jump" && !actions.Jump ? Math.max(0, Math.sin(Math.PI * Math.min(1, playing.t / 0.6))) * 0.35 : 0;
+    model.position.y = baseY + hop;
     mixer.update(dt);
     model.updateMatrixWorld();
     placeAccessories(dt);
