@@ -130,7 +130,21 @@
       background: var(--panel); border: 2px solid rgba(255,255,255,.35); }
     #looks-btn { position: fixed; right: 200px; bottom: 28px; width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 22px;
       background: var(--panel); border: 2px solid rgba(255,255,255,.35); }
-    @media (pointer: fine) { #chat-btn, #looks-btn { bottom: 52px; } }
+    #shop-btn { position: fixed; right: 260px; bottom: 28px; height: 52px; padding: 0 14px; border-radius: 26px; font-size: 16px;
+      background: var(--panel); border: 2px solid #ffd36b; color: #ffd36b; }
+    @media (pointer: fine) { #chat-btn, #looks-btn, #shop-btn { bottom: 52px; } }
+    @media (max-width: 560px) { #shop-btn { right: auto; left: 12px; bottom: auto; top: 52px; height: 40px; font-size: 14px; } }
+    body.chatting #shop-btn { visibility: hidden; }
+    #shop { max-height: min(78vh, 640px); overflow-y: auto; }
+    #shop header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    #shop-tabs { grid-template-columns: repeat(4, 1fr); }
+    #shop-tabs button { padding: 6px 4px; font-size: 13px; }
+    #shop-body { display: grid; gap: 8px; }
+    .shop-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.08); }
+    .shop-row .row { flex-wrap: nowrap; }
+    .shop-h { margin: 8px 0 0; font-size: 14px; color: #ffd36b; }
+    .spot-why { color: #7ee081; margin: 0; }
+    .spot-why.bad { color: #ff9a9a; }
     body.chatting #prompt, body.chatting #vprompt, body.chatting #dance, body.chatting #chat-btn, body.chatting #looks-btn, body.chatting #joystick { visibility: hidden; }
     #crew { width: 180px; padding: 10px 12px; display: grid; gap: 6px; font-size: 14px; }
     #crew h3 { margin: 0; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; opacity: .8; }
@@ -325,6 +339,17 @@
   <button id="dance" type="button" aria-pressed="false" hidden>Dance</button>
   <button id="chat-btn" type="button" aria-label="Chat" title="Chat (Enter)" hidden>💬</button>
   <button id="looks-btn" type="button" aria-label="Change your look" title="Change your look" hidden>👕</button>
+  <button id="shop-btn" type="button" aria-label="Credits and shop" title="Credits and shop" hidden>🪙</button>
+  <section id="shop" class="card sheet" hidden role="dialog" aria-labelledby="shop-title">
+    <header><h2 id="shop-title">Shop</h2><button id="shop-close" class="btn-ghost btn-sm" type="button">Close</button></header>
+    <div id="shop-tabs" class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="camp">⛺ Camp</button>
+      <button type="button" role="tab" data-tab="wear">🕶️ Wear</button>
+      <button type="button" role="tab" data-tab="look">🧍 Looks</button>
+      <button type="button" role="tab" data-tab="credits">🪙 Credits</button>
+    </div>
+    <div id="shop-body"></div>
+  </section>
 
   <button id="reports-btn" type="button" aria-label="Reports" title="Reports" hidden>🛡️<b hidden>0</b></button>
   <section id="reports" class="card" hidden role="dialog" aria-labelledby="rv-title">
