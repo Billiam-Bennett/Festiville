@@ -9,7 +9,7 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 | File | What it does |
 |---|---|
 | `shared/sim.js` | Movement rules (speed, map bounds, input cleanup). Used by BOTH server and browser. |
-| `server/schema.js` | The state every player sees: name, position, facing, dance emote. |
+| `server/schema.js` | The state every player sees: name, position, facing, emote. |
 | `server/FestivalRoom.js` | One festival instance: 100 players max, 20 ticks/sec, server owns all positions. |
 | `server/index.js` | Starts the game server on port 2567: game traffic, the vendor API, and the game page, all on one port. |
 | `server/vendors.js` | Vendor listings (menus, upcoming stops) and their private edit keys, saved in `data/`. |
@@ -22,7 +22,7 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 | `server/quests.js` | All crew and quest rules (invites, crew size, quest steps, timers, badges). No networking, so it's fully tested. |
 | `shared/quests-data.js` | Quest content: who gives each quest, what they say, where things are. **Edit this to tweak or add quests.** |
 | `client/quests-ui.js` | Quest givers, Talk button, quest dialog, tracker, glowing objectives, crew rings, invites, badges. |
-| `client/index.html` | The game page: join screen, HUD, Dance button, phone joystick. |
+| `client/index.html` | The game page: join screen, HUD, Emote button, phone joystick. |
 | `client/main.js` | 3D scene setup and the game loop. |
 | `shared/layout.js` | **What's on the grounds**, as plain data: every stage, stall, area, tent, light, character and quest spot. The festival builder edits this; the server saves it in `data/layout.json`. |
 | `shared/venue.js` | Turns a layout into what the game reads (vendors, zones, quest positions), plus every vendor's starting menu. |
@@ -106,7 +106,7 @@ npm run client    # game page at http://localhost:5173
 
 Open http://localhost:5173 in **two browser windows**, create a different account in each (any username and a password of 8+ characters), and walk around. Each window should show the other player moving. If you run `npm run bots` at the same time, you'll see the bots walking circles too.
 
-**Controls:** WASD or arrows to walk, hold Shift to run, **E** or the **Dance** button to dance (everyone sees it; walking away ends it). On phones, use the joystick; push it to the edge to run.
+**Controls:** WASD or arrows to walk, hold Shift to run, **Space** to jump, **E** to dance, **1-9** or the **Emote** button for the rest: dance, bounce, fist pump, clap, wave, cheer, point, thumbs up and sit (everyone sees them; walking away ends a dance or stands you up; you can jump while running). On phones, use the joystick; push it to the edge to run. The emote list is `shared/emotes.js`.
 
 **Getting around:** scroll the mouse wheel, press **+ / -**, or pinch to zoom the camera (all the way out gives a bird's-eye view). The minimap in the top-right corner shows you (pink arrow), crewmates (blue), other players (white), quest givers (yellow) and quest objectives. Tap it, press **M**, or tap **Map** for the full festival map: drag to pan, scroll or pinch to zoom, and pick a vendor from the list or the map.
 
@@ -343,7 +343,7 @@ The bodies and parts are made from MakeHuman's free **CC0** assets by `scripts/m
 client/assets/parts/manifest.json         every exported file, plus each clothing part's slot and hide bit
 client/assets/parts/female/body.glb       base body (skin, eyes, eyelashes) + mixamorig* skeleton + hide masks + shape morphs
 client/assets/parts/female/<file>.glb     one per part (the part's `file` in shared/parts.js)
-client/assets/parts/female/anims.json     the body's animations: Idle, Walk, Run, Dance
+client/assets/parts/female/anims.json     the body's animations: Idle, Walk, Run, Dance and the emotes
 client/assets/parts/female/skins/*.webp   extra skin textures
 client/assets/parts/male/…                the same for the male body
 ```
@@ -354,11 +354,11 @@ client/assets/parts/male/…                the same for the male body
 - **Skin under clothes:** `body.glb` stores a mask per clothing slot (top, bottom, shoes, accessory) saying which skin each part covers, so the game hides that skin while it's worn and nothing pokes through.
 - **Body shapes:** builds and faces are morph targets in `body.glb` (`build_heavy`, `face_round`, …; quantized and sparse, about 0.1–0.25 MB each). The game bakes the chosen ones into the body once and **refits every part to the shaped body** when it loads (each part vertex follows the nearest body surface), so parts are exported once per body, not once per shape. Height just scales the avatar. To add a shape: add it to `SHAPES` in `scripts/make-parts.py` (MPFB macros and/or targets), re-run it, then add it to `BUILDS` / `FACES` in `shared/parts.js`.
 - **Outfit halves:** some tops and bottoms are halves of MakeHuman's one-piece system outfits, split at the hips by `make-parts.py` (entries like `("jeans", "male_casualsuit04", "lower")`).
-- **Animations:** each body gets the classic characters' clips, re-fitted to its skeleton:
+- **Animations:** each body gets the classic characters' Idle/Walk/Run/Dance plus the emotes (CC0 clips from Quaternius' Universal Animation Library and KayKit Character Animations, and a few made in the script), all re-fitted to its skeleton by one command:
   ```bash
-  npm run retarget -- client/assets/parts/female/body.glb Idle=client/assets/characters/remy.anims.json#Idle Walk=client/assets/characters/remy.anims.json#Walk Run=client/assets/characters/remy.anims.json#Run Dance=client/assets/characters/remy.anims.json#Dance --out client/assets/parts/female/anims.json
+  npm run parts-anims
   ```
-  (and the same with `male`). After re-running `make-parts.py`, run these again.
+  It downloads the CC0 packs once into `.cache/` (not committed) and rewrites both `anims.json` files; the list of clips is at the top of `scripts/parts-anims.mjs`. After re-running `make-parts.py`, run it again. To add an emote: add its clip there, then a line to `shared/emotes.js`.
 
 #### Adding a part
 
@@ -434,7 +434,7 @@ Quest givers can wear any character too: set `look` on each giver in `shared/que
 - Other players are smoothed between server updates so they don't jitter.
 - `WORLD_HALF_SIZE` in `shared/sim.js` sets the map size (currently 200 × 200 meters); `WALK_LIMIT` keeps players inside the fence. Walking is 3 m/s and running 6.5 m/s.
 - Quest rules run only on the server using the server's own positions, so nobody can fake finding an item or standing on a marker.
-- Animations aren't sent over the network. Each browser works out Idle / Walk / Run from how fast a player is moving, so it costs no extra bandwidth. Only the dance emote is synced.
+- Animations aren't sent over the network. Each browser works out Idle / Walk / Run from how fast a player is moving, so it costs no extra bandwidth. Only the emote is synced (`emote` and `emoteSeq` in `server/schema.js`; see `shared/emotes.js`).
 
 ## Next
 
