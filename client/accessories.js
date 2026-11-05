@@ -55,6 +55,24 @@ export function buildAccessory(THREE, id) {
       add(box(THREE, 0.03, 0.012, 0.015, "#ff4fa3"), 0, 0, 0);
       return slot(a, g, [0, 0.03, 0.1]);
     }
+    case "shutters": {
+      // Shutter shades: two frames with horizontal slats, in hot pink.
+      for (const x of [-0.045, 0.045]) {
+        add(box(THREE, 0.075, 0.05, 0.012, "#ff4fa3", { emissive: "#7a1f4f", emissiveIntensity: 0.3 }), x, 0, 0);
+        for (let i = 0; i < 4; i++) add(box(THREE, 0.07, 0.006, 0.016, "#1a1a22"), x, -0.018 + i * 0.012, 0.004);
+      }
+      add(box(THREE, 0.03, 0.012, 0.012, "#ff4fa3"), 0, 0, 0);
+      return slot(a, g, [0, 0.03, 0.1]);
+    }
+    case "totem": {
+      // A tall festival totem on a pole, held up so friends can find you in the crowd.
+      add(new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.5, 8), std(THREE, "#d9d6d0")), 0, 0.75, 0);
+      const sign = add(new THREE.Mesh(new THREE.CircleGeometry(0.16, 6), new THREE.MeshStandardMaterial({ color: "#5ad1ff", emissive: "#2a8fbf", emissiveIntensity: 0.8, side: THREE.DoubleSide })), 0, 1.55, 0);
+      sign.userData.spin = true;
+      add(new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.012, 8, 6), std(THREE, "#ffd36b", { emissive: "#e0a93f", emissiveIntensity: 0.6 })), 0, 1.55, 0);
+      for (const [y, c] of [[1.32, "#ff4fa3"], [1.24, "#9b7bff"], [1.16, "#7ee081"]]) add(box(THREE, 0.02, 0.18, 0.004, c, { emissive: c, emissiveIntensity: 0.4 }), 0.03, y, 0);
+      return slot(a, g, [0.02, -0.05, 0.04], true);   // spins slowly so it reads from every side
+    }
     case "glowstick": {
       const s = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.02, 0.22, 4, 8), std(THREE, "#8dff6b", { emissive: "#4aff2f", emissiveIntensity: 1.0 })), 0, 0, 0, 0.5, 0, 0);
       return slot(a, g, [0.02, 0.02, 0.04]);

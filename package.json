@@ -8,7 +8,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "client": "node scripts/serve-client.js",
-    "test": "node --test test/sim.test.js test/quests.test.js test/vendors.test.js test/chat.test.js test/accounts.test.js test/moderation.test.js test/layout.test.js test/truck.test.js test/accessories.test.js test/parts.test.js",
+    "test": "node --test test/sim.test.js test/quests.test.js test/vendors.test.js test/chat.test.js test/accounts.test.js test/moderation.test.js test/layout.test.js test/truck.test.js test/accessories.test.js test/parts.test.js test/economy.test.js",
     "bots": "node test/bots.js",
     "retarget": "node scripts/retarget.mjs",
     "vendor-link": "node scripts/vendor-link.mjs",

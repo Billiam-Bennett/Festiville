@@ -3,6 +3,7 @@
 // glowing pickups and beacons, crewmate rings, invites, badges on name tags, and toasts.
 // The server decides everything; this file only shows it and sends requests.
 import { GIVERS, QUESTS, TALK_RANGE, AMBIENT, giverById, dist } from "../shared/quests-data.js";
+import { QUEST_REWARDS } from "../shared/economy.js";
 
 const CREW_COLOR = 0x4fe3ff;
 
@@ -45,7 +46,7 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
   room.onMessage("toast", (m) => toast(m.text, m.error ? "error" : ""));
   room.onMessage("questStart", (m) => toast(m.by === me()?.name ? `Quest started: ${m.name}` : `${m.by} started ${m.name} for the crew!`));
   room.onMessage("questDone", (m) => {
-    if (m.success) toast(`Quest complete: ${m.name}! You earned the ${m.badge} badge.`, "big", 6000);
+    if (m.success) toast(`Quest complete: ${m.name}! You earned the ${m.badge} badge${m.credits ? ` and ${m.credits} credits 🪙` : ""}.`, "big", 6000);
     else toast(m.text || `${m.name} ended.`, "error", 6000);
   });
   room.onMessage("offer", showOffer);
@@ -92,7 +93,11 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
     $("of-name").textContent = m.name;
     $("of-pitch").textContent = `"${m.pitch}"`;
     $("of-how").textContent = m.howTo;
-    $("of-badge").textContent = m.done ? `You already have the ${m.badge} badge. Play it again anytime.` : `Reward: the ${m.badge} badge on your name tag.`;
+    // Credits shown are a guide: repeats pay less, and stop paying after the daily cap (shared/economy.js).
+    const r = QUEST_REWARDS[m.questId];
+    $("of-badge").textContent = m.done
+      ? `You already have the ${m.badge} badge. Play it again for ${r ? `${r.repeat} credits 🪙` : "fun"}.`
+      : `Reward: the ${m.badge} badge on your name tag${r ? ` and ${r.first} credits 🪙` : ""}.`;
     $("of-blocked").textContent = m.blocked;
     $("of-blocked").hidden = !m.blocked;
     $("of-start").disabled = !!m.blocked;
