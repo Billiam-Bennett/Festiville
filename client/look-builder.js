@@ -1,11 +1,12 @@
 // The "Build your own" character editor, used on the join screen and in the 👕 panel.
-// Pick a body, skin tone, and for each slot (hair, eyebrows, top, bottom, shoes) a part and its color.
+// Pick a body, skin tone, build, face and height, and for each slot (hair, eyebrows, top, bottom, shoes,
+// accessory) a part and its color.
 // It only edits a recipe string (shared/parts.js); the server re-checks premium parts when you join/apply.
 //
 //   const builder = createLookBuilder({ host, isUnlocked, onChange, explain });
 //   builder.set(recipe); builder.get();
 import {
-  BODIES, PART_SLOTS, SKIN_TONES, partsFor, partById, parseRecipe, formatRecipe,
+  BODIES, PART_SLOTS, SKIN_TONES, SHAPE_KINDS, partsFor, partById, parseRecipe, formatRecipe,
   randomRecipe, defaultPart,
 } from "../shared/parts.js";
 
@@ -40,6 +41,10 @@ export function createLookBuilder({ host, isUnlocked = (p) => p.tier !== "premiu
       el("div", { className: "chips" }, ...BODIES.map((b) => chip(b.name, r.body === b.id, () => { r.body = b.id; changed(); })))));
     rows.push(el("div", { className: "lb-row" }, el("span", { className: "lb-label", textContent: "Skin" }),
       swatches(SKIN_TONES, r.skin, (i) => { r.skin = i; changed(); }, "Skin")));
+    for (const kind of SHAPE_KINDS) {
+      rows.push(el("div", { className: "lb-row" }, el("span", { className: "lb-label", textContent: kind.name }),
+        el("div", { className: "chips" }, ...kind.options.map((o) => chip(o.name, r.shape[kind.id] === o.id, () => { r.shape[kind.id] = o.id; changed(); })))));
+    }
     const locked = [];
     for (const slot of PART_SLOTS) {
       const cur = r.parts[slot.id];
