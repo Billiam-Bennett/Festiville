@@ -52,7 +52,7 @@ export function createLookBuilder({ host, isUnlocked = (p) => p.tier !== "premiu
         chips.append(chip(p.name, cur?.id === p.id, () => { r.parts[slot.id] = { id: p.id, color: cur?.color ?? 0 }; changed(); }, { locked: lk, premium: p.tier === "premium" }));
       }
       const row = el("div", { className: "lb-row" }, el("span", { className: "lb-label", textContent: slot.name }), chips);
-      if (cur) row.append(swatches(slot.colors, cur.color, (i) => { cur.color = i; changed(); }, slot.name));
+      if (cur && partById(cur.id)?.tint !== false) row.append(swatches(slot.colors, cur.color, (i) => { cur.color = i; changed(); }, slot.name));
       rows.push(row);
       if (cur && !isUnlocked(partById(cur.id))) locked.push({ part: partById(cur.id), instead: defaultPart(r.body, slot.id) });
     }

@@ -80,7 +80,7 @@ test("a built character (recipe) and part unlocks are saved on the account", asy
   try {
     const { account } = await store.signup("Builder", "tacos-forever");
     assert.equal(store.public(store.get(account.id)).recipe, "");
-    const recipe = "male;4;hair=hair_afro:2;top=top_tank:1;bottom=bottom_jeans:0";
+    const recipe = "male;4;hair=hair_afro:2;top=top_tank:1;bottom=bottom_pants:0";
     store.setRecipe(account.id, recipe);
     store.unlock("builder", "hair_afro");                                                 // npm run account -- unlock builder hair_afro
     const other = new AccountStore({ dir });

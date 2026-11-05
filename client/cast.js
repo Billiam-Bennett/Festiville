@@ -7,7 +7,7 @@
 // whole character (`look`, shared/characters.js). If the recipe can't be built (the part files aren't
 // installed yet), the classic look is shown instead, then the placeholder as a last resort.
 import { CHARACTERS, DEFAULT_LOOK, lookById, animsFor } from "../shared/characters.js";
-import { normalizeRecipe, parseRecipe, skinHex, partColorHex } from "../shared/parts.js";
+import { normalizeRecipe, parseRecipe, skinHex, partTintHex } from "../shared/parts.js";
 import { loadCharacterKit } from "./character.js";
 import { createPartsKit } from "./avatar.js";
 
@@ -28,7 +28,8 @@ export function createCast(THREE, { placeholder }) {
   function placeholderColors(p, recipe) {
     const r = parseRecipe(recipe);
     if (!r) return p;
-    return { name: p.name, skinTone: skinHex(r.skin), shirtColor: r.parts.top ? partColorHex("top", r.parts.top.color) : p.shirtColor };
+    const top = r.parts.top;
+    return { name: p.name, skinTone: skinHex(r.skin), shirtColor: (top && partTintHex(top.id, "top", top.color)) || p.shirtColor };
   }
 
   function make(p) {

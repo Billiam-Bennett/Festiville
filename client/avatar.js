@@ -8,8 +8,12 @@
 //   2. Load each part glb (hair, eyebrows, top, bottom, shoes). Take only its skinned meshes, and
 //      rebind them to the CLONED body's bones by name, so they follow the body's animation.
 //      (The part's own bones are never added to the scene: one skeleton per player.)
-//   3. Tint: skin on the body, the chosen swatch on each part (material color × swatch).
-//   4. Animate with the ONE shared set in parts/anims.json, through rigAvatar() like classic characters.
+//   3. Tint: skin on the body, the chosen swatch on each part (material color × swatch), except parts
+//      marked tint: false, which keep their own printed colors.
+//   4. Hide the skin under clothes: body.glb has a per-vertex mask per clothing slot (_hide_top,
+//      _hide_bottom, _hide_shoes; bit N = that slot's Nth part in parts/manifest.json covers the
+//      vertex). The body's material drops those fragments for the parts being worn.
+//   5. Animate with the body's one shared set in parts/<body>/anims.json, through rigAvatar() like classic characters.
 //
 // Everything downloaded is cached and shared: each glb is fetched once, geometry and textures are
 // shared by every player wearing it, and tinted materials are shared by players with the same color.
@@ -18,20 +22,24 @@
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/addons/utils/SkeletonUtils.js";
 import { rigAvatar, collectClips } from "./character.js";
-import { parseRecipe, bodyModel, partModel, PARTS_ANIMS, skinHex, partColorHex, PART_SLOTS } from "../shared/parts.js";
+import { parseRecipe, bodyModel, partModel, partsAnims, skinHex, partTintHex, PART_SLOTS } from "../shared/parts.js";
 
 const boneKey = (n) => n.replace(/^mixamorig\d*:?/, "");
 // Materials that keep their own color (eyes, teeth, …) — see the contract in shared/parts.js.
 const NO_TINT = /eye|teeth|tooth|tongue|lash|fixed|notint/i;
 const TARGET_HEIGHT = 1.7;
+const HIDE_SLOTS = ["top", "bottom", "shoes"];   // must match CLOTHING_SLOTS in scripts/make-parts.py
+const MANIFEST = "parts/manifest.json";
 
 export function createPartsKit(THREE, { base = "./assets/" } = {}) {
   const loader = new GLTFLoader();
   const files = new Map();        // url -> Promise<gltf | null>
   const bodies = new Map();       // body id -> Promise<{ gltf, clips, scale, lift, height } | null>
   const tinted = new Map();       // "materialUuid|#hex" -> tinted material (shared)
+  const hiding = new Map();       // "materialUuid|t,b,s" -> body material that hides covered skin (shared)
   const warned = new Set();
-  let anims = null;               // Promise<array of clip JSON>
+  const anims = new Map();        // body id -> Promise<array of clip JSON>
+  let manifest = null;            // Promise<manifest json | null>
 
   const warnOnce = (key, ...msg) => { if (!warned.has(key)) { warned.add(key); console.warn(...msg); } };
 
@@ -47,18 +55,65 @@ export function createPartsKit(THREE, { base = "./assets/" } = {}) {
     return files.get(url);
   }
 
-  function loadAnims() {
-    anims ??= fetch(base + PARTS_ANIMS).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-    return anims;
+  function loadAnims(body) {
+    if (!anims.has(body)) anims.set(body, fetch(base + partsAnims(body)).then((r) => (r.ok ? r.json() : [])).catch(() => []));
+    return anims.get(body);
+  }
+
+  function loadManifest() {
+    manifest ??= fetch(base + MANIFEST).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    return manifest;
+  }
+
+  // Which hide bits the worn parts set, per clothing slot: [top, bottom, shoes].
+  function hideBits(man, body, worn) {
+    const files = man?.bodies?.[body]?.parts ?? {};
+    const bits = HIDE_SLOTS.map(() => 0);
+    for (const p of worn) {
+      const entry = files[partModel(body, p.id).split("/").pop().replace(/\.glb$/, "")];
+      const s = HIDE_SLOTS.indexOf(entry?.slot);
+      if (s >= 0 && Number.isInteger(entry.hideBit)) bits[s] |= 1 << entry.hideBit;
+    }
+    return bits;
+  }
+
+  // A copy of the body material that discards skin covered by the worn clothes.
+  function hidingMaterial(material, bits) {
+    if (Array.isArray(material)) return material.map((m) => hidingMaterial(m, bits));
+    if (!material || !bits.some(Boolean)) return material;
+    const key = `${material.uuid}|${bits}`;
+    if (!hiding.has(key)) {
+      const m = material.clone();
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.fvHide = { value: new THREE.Vector3(...bits) };
+        shader.vertexShader = shader.vertexShader
+          .replace("#include <common>", `#include <common>
+attribute float _hide_top;
+attribute float _hide_bottom;
+attribute float _hide_shoes;
+uniform vec3 fvHide;
+varying float vFvHide;`)
+          .replace("#include <begin_vertex>", `#include <begin_vertex>
+ivec3 fvMask = ivec3(int(_hide_top + 0.5), int(_hide_bottom + 0.5), int(_hide_shoes + 0.5));
+ivec3 fvWorn = ivec3(fvHide + 0.5);
+vFvHide = ((fvMask.x & fvWorn.x) | (fvMask.y & fvWorn.y) | (fvMask.z & fvWorn.z)) != 0 ? 1.0 : 0.0;`);
+        shader.fragmentShader = shader.fragmentShader
+          .replace("#include <common>", "#include <common>\nvarying float vFvHide;")
+          .replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (vFvHide > 0.5) discard;");
+      };
+      m.customProgramCacheKey = () => "fv-hide";   // one shader for every mask; the bits are a uniform
+      hiding.set(key, m);
+    }
+    return hiding.get(key);
   }
 
   // The base body for "female" / "male", measured once.
   function loadBody(body) {
     if (!bodies.has(body)) {
-      bodies.set(body, Promise.all([loadFile(bodyModel(body)), loadAnims()]).then(([gltf, extra]) => {
+      bodies.set(body, Promise.all([loadFile(bodyModel(body)), loadAnims(body)]).then(([gltf, extra]) => {
         if (!gltf) return null;
         const clips = collectClips(THREE, gltf.animations, extra);
-        if (!clips.Idle) warnOnce("anims", `No Idle animation in ${base}${PARTS_ANIMS} (or in the body); built characters will stand still.`);
+        if (!clips.Idle) warnOnce("anims", `No Idle animation in ${base}${partsAnims(body)} (or in the body); built characters will stand still.`);
         const box = new THREE.Box3().setFromObject(gltf.scene);
         const h = Math.max(box.max.y - box.min.y, 0.01);
         // MakeHuman exports in meters, and the two bodies keep their real heights. If a file comes in
@@ -75,7 +130,7 @@ export function createPartsKit(THREE, { base = "./assets/" } = {}) {
 
   function tint(material, hex) {
     if (Array.isArray(material)) return material.map((m) => tint(m, hex));
-    if (!material || NO_TINT.test(material.name || "") || !material.color) return material;
+    if (!hex || !material || NO_TINT.test(material.name || "") || !material.color) return material;
     const key = `${material.uuid}|${hex}`;
     if (!tinted.has(key)) {
       const m = material.clone();
@@ -124,16 +179,18 @@ export function createPartsKit(THREE, { base = "./assets/" } = {}) {
     const ids = PART_SLOTS.map((s) => r.parts[s.id] && { slot: s.id, ...r.parts[s.id] }).filter(Boolean);
     const kit = await loadBody(r.body);   // first, so a missing body doesn't also fetch (and 404) every part
     if (!kit) return null;
-    const partFiles = await Promise.all(ids.map((p) => loadFile(partModel(r.body, p.id))));
+    const [partFiles, man] = await Promise.all([Promise.all(ids.map((p) => loadFile(partModel(r.body, p.id)))), loadManifest()]);
 
     const model = SkeletonUtils.clone(kit.gltf.scene);
     model.scale.setScalar(kit.scale);
     model.position.y = kit.lift;
     tintBody(model, skinHex(r.skin));
+    const bits = hideBits(man, r.body, ids.filter((p, i) => partFiles[i]));
+    model.traverse((n) => { if (n.isMesh && n.geometry.attributes._hide_top) n.material = hidingMaterial(n.material, bits); });
     model.updateMatrixWorld(true);
     const bones = new Map();
     model.traverse((n) => { if (n.isBone && !bones.has(boneKey(n.name))) bones.set(boneKey(n.name), n); });
-    ids.forEach((p, i) => { if (partFiles[i]) attachPart(partFiles[i], model, bones, partColorHex(p.slot, p.color), p.id); });
+    ids.forEach((p, i) => { if (partFiles[i]) attachPart(partFiles[i], model, bones, partTintHex(p.id, p.slot, p.color), p.id); });
 
     const root = rigAvatar(THREE, model, kit.clips, profile, kit.height);
     root.userData.recipe = recipe;

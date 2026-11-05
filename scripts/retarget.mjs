@@ -7,6 +7,10 @@
 // recommended; Dance is optional (Dance=anims/dance.glb, or leave a "dance" animation inside
 // character.glb). Download animations from Mixamo with "In Place" checked.
 //
+// A source can also be another character's already-fitted animations: Walk=client/assets/characters/remy.anims.json#Walk
+// (the .glb next to it supplies that character's rest pose). That's how the parts bodies get theirs:
+//   node scripts/retarget.mjs client/assets/parts/female/body.glb Idle=client/assets/characters/remy.anims.json#Idle … --out client/assets/parts/female/anims.json
+//
 // How it works: each animation's bone rotations are converted to world space, re-applied to your
 // character's own rest pose, then converted back. So animations made for one Mixamo rig look right
 // on another, even when their bones point slightly differently.
@@ -66,6 +70,12 @@ function animationOnlyGlb(b) {
 }
 
 async function pickClip(path, wanted) {
+  if (/\.anims\.json$/i.test(path)) {
+    const clips = JSON.parse(readFileSync(path, "utf8")).map((c) => THREE.AnimationClip.parse(c));
+    const c = wanted ? clips.find((a) => a.name.toLowerCase() === wanted.toLowerCase()) : clips[0];
+    if (!c) throw new Error(`${path} has no animation called "${wanted}" (it has: ${clips.map((a) => a.name).join(", ")})`);
+    return c;
+  }
   const b = readFileSync(path);
   const gltf = await new Promise((res, rej) => new GLTFLoader().parse(animationOnlyGlb(b), "", res, rej));
   if (!gltf.animations.length) throw new Error(`${path} has no animation in it`);
@@ -87,7 +97,7 @@ for (const pair of pairs) {
   const [name, spec] = pair.split("=");
   const [path, wanted] = (spec ?? "").split("#");
   if (!name || !path) throw new Error(`Expected Name=file.glb, got "${pair}"`);
-  const S = graph(path);
+  const S = graph(path.replace(/\.anims\.json$/i, ".glb"));   // fitted animations: rest pose from their model
   const clip = await pickClip(path, wanted);
   const interp = {};
   for (const t of clip.tracks) {

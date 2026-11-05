@@ -269,7 +269,7 @@ Both are on the join screen and in the in-game 👕 panel, with a live 3D previe
 
 ### Parts-based characters (the generator)
 
-The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the slots, every part (which bodies it fits, free or premium), and the color palettes. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so a single animation set fits every combination. Colors are tinted in the game, not baked into the files.
+The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the slots, every part (which bodies it fits, free or premium, its file), and the color palettes. There are 12 hairstyles, 3 eyebrow styles, 8 tops, 7 bottoms and 10 pairs of shoes. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so one animation set per body fits every combination.
 
 A player's look is stored as a short **recipe** string: body, skin tone, then `slot=part:color` for each filled slot (colors are palette numbers):
 
@@ -279,30 +279,39 @@ female;3;hair=hair_bob:4;eyebrows=brows_soft:1;top=top_tank:2;bottom=bottom_shor
 
 The server cleans every recipe (`normalizeRecipe()`), swaps premium parts the account hasn't unlocked for the free default, saves it as the player's default, and syncs it to everyone. A player has either a recipe or a classic look; the classic look is kept too, as a fallback (see below). Quest givers and NPCs can wear a recipe: set `recipe` next to `look` in `shared/quests-data.js` (`randomRecipe(seededRandom("their-id"))` gives a random one that's the same on every screen).
 
-#### The asset contract (what the Blender pipeline must deliver)
+#### The part files
+
+The bodies and parts are made from MakeHuman's free **CC0** assets by `scripts/make-parts.py` (Blender + the MPFB extension; credits in `client/assets/parts/CREDITS.md`):
 
 ```
-client/assets/parts/anims.json            the shared animations: Idle, Walk, Run (optional Dance)
-client/assets/parts/female/body.glb       base body: skinned mesh + mixamorig* skeleton
-client/assets/parts/female/<partId>.glb   one per part that fits this body (e.g. hair_bob.glb, top_tank.glb)
-client/assets/parts/male/body.glb
-client/assets/parts/male/<partId>.glb
+client/assets/parts/manifest.json         every exported file, plus each clothing part's slot and hide bit
+client/assets/parts/female/body.glb       base body (skin, eyes, eyelashes) + mixamorig* skeleton + hide masks
+client/assets/parts/female/<file>.glb     one per part (the part's `file` in shared/parts.js)
+client/assets/parts/female/anims.json     the body's animations: Idle, Walk, Run, Dance
+client/assets/parts/female/skins/*.webp   extra skin textures
+client/assets/parts/male/…                the same for the male body
 ```
 
-- `<partId>` is the part's `id` in `shared/parts.js`. Clothing and hair are exported **once per body** they fit (listed in the part's `bodies`).
-- **Bones:** every file uses the same `mixamorig*` bone names and the same rest pose as that body's `body.glb`. A part may carry its own copy of the skeleton (normal for a glb); the game only takes its skinned meshes and rebinds them to the player's body bones by name. A bone the body doesn't have falls back to its nearest parent that it does.
-- **Scale:** meters (MakeHuman's default). The two bodies keep their real heights.
-- **Colors:** the game multiplies each material's base color by the chosen swatch, so author tintable textures light grey or white. Materials whose name contains `eye`, `teeth`, `tongue`, `lash`, `fixed` or `notint` are left alone. On the body, the skin tone tints every other material.
-- **Animations:** fit them to one body with the retarget script (both bodies share the skeleton, so one set serves both):
+- **Bones:** every file uses the same `mixamorig*` bone names and rest pose as that body's `body.glb`. The game takes each part's skinned meshes and rebinds them to the player's body bones by name.
+- **Scale:** meters. The two bodies keep their real heights (1.59 m and 1.73 m).
+- **Colors:** hair and eyebrows are exported light grey and take the hair color swatches. Clothes keep their own printed colors and patterns (`tint: false` in `shared/parts.js`, so the builder shows no swatches for them). The skin tone tints the body.
+- **Skin under clothes:** `body.glb` stores a mask per clothing slot (top, bottom, shoes) saying which skin each part covers, so the game hides that skin while it's worn and nothing pokes through.
+- **Animations:** each body gets the classic characters' clips, re-fitted to its skeleton:
   ```bash
-  npm run retarget -- client/assets/parts/female/body.glb Idle=idle.glb Walk=walking.glb Run=running.glb Dance=dance.glb --out client/assets/parts/anims.json
+  npm run retarget -- client/assets/parts/female/body.glb Idle=client/assets/characters/remy.anims.json#Idle Walk=client/assets/characters/remy.anims.json#Walk Run=client/assets/characters/remy.anims.json#Run Dance=client/assets/characters/remy.anims.json#Dance --out client/assets/parts/female/anims.json
   ```
+  (and the same with `male`). After re-running `make-parts.py`, run these again.
 
 #### Adding a part
 
-1. In Blender (MPFB), fit the hair or clothing to each body, rig it to the shared skeleton, and export `client/assets/parts/<body>/<id>.glb` for each body it fits.
-2. Add a line to `PARTS` in `shared/parts.js`, e.g. `{ id: "top_mesh", name: "Mesh top", slot: "top", bodies: ["female", "male"], tier: "free" }`. Ids are lowercase (`a-z 0-9 _ -`) and unique across parts, characters and accessories.
-3. Restart the server (it prints the part list at startup) and refresh. Palettes are append-only: recipes store color numbers, so reordering a palette recolors everyone.
+1. Install [Blender](https://www.blender.org/download/), then the **MPFB** extension, and load MakeHuman CC0 asset packs into MPFB (see "Making a realistic character with MakeHuman" below).
+2. Add the asset's folder name to the right slot in `PARTS` at the top of `scripts/make-parts.py`, and run it:
+   ```bash
+   blender -b --python scripts/make-parts.py -- client/assets/parts
+   ```
+   (`--only top=<name>` exports just one part, for testing.) Then re-fit the animations as above.
+3. Add a line to `PARTS` in `shared/parts.js`, e.g. `{ id: "top_mesh", name: "Mesh top", slot: "top", bodies: ["female", "male"], tier: "free", file: "<name>", tint: false }`. Ids are lowercase (`a-z 0-9 _ -`, up to 32 characters) and unique across parts, characters and accessories; `file` can be longer.
+4. Restart the server (it prints the part list at startup) and refresh. Palettes are append-only: recipes store color numbers, so reordering a palette recolors everyone.
 
 #### Before the art arrives (and when a file is missing)
 

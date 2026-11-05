@@ -46,20 +46,20 @@ test("normalize: a canonical recipe comes back unchanged", () => {
 
 test("normalize: slot order is fixed, duplicates and unknowns are dropped", () => {
   assert.equal(
-    normalizeRecipe("female;3;shoes=shoes_boots:1;top=top_tee:2;top=top_tank:5;bogus=x:1;hair=nope:2;bottom=bottom_jeans:0"),
-    "female;3;top=top_tee:2;bottom=bottom_jeans:0;shoes=shoes_boots:1",
+    normalizeRecipe("female;3;shoes=shoes_boots:1;top=top_tee:2;top=top_tank:5;bogus=x:1;hair=nope:2;bottom=bottom_pants:0"),
+    "female;3;top=top_tee:2;bottom=bottom_pants:0;shoes=shoes_boots:1",
   );
 });
 
 test("normalize: wrong slot, wrong body and bad colors are cleaned", () => {
-  // top_tee in the hair slot is ignored; skirt doesn't fit the male body -> default bottom; colors out of range -> 0.
-  assert.equal(normalizeRecipe("male;99;hair=top_tee:1;top=top_tank:99;bottom=bottom_skirt:3"), "male;0;top=top_tank:0;bottom=bottom_jeans:0");
-  assert.equal(normalizeRecipe("male;-1;top=top_tank:1.5;bottom=bottom_jeans:x"), "male;0;top=top_tank:0;bottom=bottom_jeans:0");
+  // top_tee in the hair slot is ignored; the tube top doesn't fit the male body -> default top; colors out of range -> 0.
+  assert.equal(normalizeRecipe("male;99;hair=top_tee:1;top=top_crop:3;bottom=bottom_skirt:99"), "male;0;top=top_tee:0;bottom=bottom_skirt:0");
+  assert.equal(normalizeRecipe("male;-1;top=top_tank:1.5;bottom=bottom_pants:x"), "male;0;top=top_tank:0;bottom=bottom_pants:0");
 });
 
 test("normalize: required slots are filled with the default; optional ones may be empty", () => {
-  assert.equal(normalizeRecipe("female;2"), "female;2;top=top_tee:0;bottom=bottom_jeans:0");
-  assert.equal(normalizeRecipe("female"), "female;0;top=top_tee:0;bottom=bottom_jeans:0");
+  assert.equal(normalizeRecipe("female;2"), "female;2;top=top_tee:0;bottom=bottom_pants:0");
+  assert.equal(normalizeRecipe("female"), "female;0;top=top_tee:0;bottom=bottom_pants:0");
 });
 
 test("normalize: not a recipe -> empty string (classic character)", () => {
@@ -70,7 +70,7 @@ test("normalize: not a recipe -> empty string (classic character)", () => {
 
 test("normalize: object form works too", () => {
   assert.equal(normalizeRecipe({ body: "male", skin: 4, parts: { hair: { id: "hair_short", color: 2 }, top: "top_tank" } }),
-    "male;4;hair=hair_short:2;top=top_tank:0;bottom=bottom_jeans:0");
+    "male;4;hair=hair_short:2;top=top_tank:0;bottom=bottom_pants:0");
   assert.deepEqual(recipePartIds(FULL), ["hair_bob", "brows_soft", "top_tank", "bottom_shorts", "shoes_sneakers"]);
 });
 
@@ -111,14 +111,14 @@ test("parts: free are open, premium need an unlock", { skip: !LOCKED && "FV_UNLO
   assert.ok(canUsePart(null, "hair_bob"));
   assert.ok(!canUsePart(null, "hair_afro"));
   assert.ok(canUsePart({ unlocks: ["hair_afro"] }, "hair_afro"));
-  assert.ok(!canUsePart({ unlocks: ["hair_afro"] }, "top_hoodie"));
+  assert.ok(!canUsePart({ unlocks: ["hair_afro"] }, "top_sweater"));
   assert.ok(!canUsePart(null, "nonsense"));
 });
 
 test("resolveRecipe swaps locked premium parts for the free default, keeping the color", { skip: !LOCKED && "FV_UNLOCK_ALL=1" }, () => {
-  const wanted = "male;2;hair=hair_afro:3;top=top_hoodie:4;bottom=bottom_cargo:1;shoes=shoes_platform:2";
-  assert.equal(resolveRecipe(null, wanted), "male;2;hair=hair_short:3;top=top_tee:4;bottom=bottom_jeans:1;shoes=shoes_sneakers:2");
-  assert.equal(resolveRecipe({ unlocks: ["top_hoodie"] }, wanted), "male;2;hair=hair_short:3;top=top_hoodie:4;bottom=bottom_jeans:1;shoes=shoes_sneakers:2");
+  const wanted = "male;2;hair=hair_afro:3;top=top_sweater:4;bottom=bottom_cargo:1;shoes=shoes_platform:2";
+  assert.equal(resolveRecipe(null, wanted), "male;2;hair=hair_short:3;top=top_tee:4;bottom=bottom_pants:1;shoes=shoes_sneakers:2");
+  assert.equal(resolveRecipe({ unlocks: ["top_sweater"] }, wanted), "male;2;hair=hair_short:3;top=top_sweater:4;bottom=bottom_pants:1;shoes=shoes_sneakers:2");
   assert.equal(resolveRecipe(null, FULL), FULL);   // all free: untouched
   assert.equal(resolveRecipe(null, "garbage"), "");
   assert.equal(resolveRecipe(null, ""), "");
@@ -141,7 +141,7 @@ test("resolveAppearance: a player has a recipe or a classic look; accessories ri
   // Premium checks apply to everything.
   const r = resolveAppearance(acct, { look: "bigvegas", recipe: "female;1;hair=hair_afro:0", accessories: ["wings"] }, {});
   assert.equal(r.look, "michelle");
-  assert.equal(r.recipe, "female;1;hair=hair_short:0;top=top_tee:0;bottom=bottom_jeans:0");
+  assert.equal(r.recipe, "female;1;hair=hair_short:0;top=top_tee:0;bottom=bottom_pants:0");
   assert.deepEqual(r.accessories, []);
   // Garbage recipe -> classic character.
   assert.equal(resolveAppearance(acct, { look: "kate", recipe: "drop table" }, {}).recipe, "");

@@ -16,7 +16,7 @@ export const GIVERS = [
   { id: "juniper", name: "Juniper", role: "Lost raver", x: -12, z: 12, quest: "lostfound", look: "sophie",
     recipe: "female;2;hair=hair_ponytail:5;eyebrows=brows_soft:2;top=top_crop:2;bottom=bottom_shorts:8;shoes=shoes_boots:1" },
   { id: "dex", name: "Dex", role: "Stage manager", x: 9, z: -46, quest: "soundcheck", look: "bryce",
-    recipe: "male;5;hair=hair_short:0;eyebrows=brows_bold:0;top=top_tee:1;bottom=bottom_jeans:8;shoes=shoes_boots:1" },
+    recipe: "male;5;hair=hair_short:0;eyebrows=brows_bold:0;top=top_tee:1;bottom=bottom_pants:8;shoes=shoes_boots:1" },
   { id: "rae", name: "Mama Rae", role: "Taco stand", x: -55, z: -20, quest: "vendorrush", look: "jody" },
 ];
 

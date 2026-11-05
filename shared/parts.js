@@ -8,8 +8,9 @@
 // FILE LAYOUT (the "asset contract"; see README → "Adding characters"):
 //   client/assets/parts/<body>/body.glb       the base body: skinned mesh + the mixamorig* skeleton
 //   client/assets/parts/<body>/<partId>.glb   one per part, skinned to bones with the same names
-//   client/assets/parts/anims.json            the shared animations (Idle, Walk, Run, optional Dance),
-//                                             written by `npm run retarget -- … --out client/assets/parts/anims.json`
+//   client/assets/parts/<body>/anims.json     the body's animations (Idle, Walk, Run, optional Dance), shared by
+//                                             every part combination; written by `npm run retarget` (see scripts/retarget.mjs)
+//   client/assets/parts/manifest.json         written by scripts/make-parts.py: each part's slot and hide bit
 // <body> is "female" or "male". A part is exported once per body it supports (listed in `bodies`).
 //
 // TO ADD A PART: export it from Blender as client/assets/parts/<body>/<id>.glb for each body,
@@ -17,7 +18,8 @@
 // and accessories (premium unlocks share one list per account), and use only a-z, 0-9, _ and -.
 //
 // COLORS are tinted in the game, not baked into the files: the game multiplies each material's
-// base color by the chosen swatch, so author tintable textures in light grey / white. Materials
+// base color by the chosen swatch, so author tintable textures in light grey / white. Parts with
+// tint: false keep their own printed colors (the picker shows no swatches for them). Materials
 // whose name contains "eye", "teeth", "tongue", "lash", "fixed" or "notint" are never tinted.
 //
 // tier: "free" for everyone, or "premium" (a paid cosmetic), exactly like characters and
@@ -52,32 +54,59 @@ export const PART_SLOTS = [
   { id: "shoes",    name: "Shoes",    required: false, colors: CLOTH_COLORS, emptyChance: 0 },
 ];
 
-// PLACEHOLDER catalog: these ids are what the Blender pipeline should export. Rename or add freely.
+// The catalog. Files come from scripts/make-parts.py (MakeHuman CC0 assets): `file` is the exported
+// file name in client/assets/parts/<body>/ (a string, or { female, male } when each body uses its own).
 // The first free part in each required slot (per body) is that slot's default.
+// tint: false = the part keeps its own printed colors/pattern (no swatches). Hair and eyebrows are
+// exported light grey, so they take the hair color swatches.
+const BOTH = ["female", "male"];
 export const PARTS = [
   // Hair
-  { id: "hair_short",    name: "Short",       slot: "hair",     bodies: ["female", "male"], tier: "free" },
-  { id: "hair_bob",      name: "Bob",         slot: "hair",     bodies: ["female", "male"], tier: "free" },
-  { id: "hair_long",     name: "Long",        slot: "hair",     bodies: ["female", "male"], tier: "free" },
-  { id: "hair_ponytail", name: "Ponytail",    slot: "hair",     bodies: ["female"],         tier: "free" },
-  { id: "hair_afro",     name: "Afro",        slot: "hair",     bodies: ["female", "male"], tier: "premium" },
+  { id: "hair_short",    name: "Short",        slot: "hair",     bodies: BOTH, tier: "free",    file: "short02" },
+  { id: "hair_bob",      name: "Bob",          slot: "hair",     bodies: BOTH, tier: "free",    file: "bob01" },
+  { id: "hair_long",     name: "Long",         slot: "hair",     bodies: BOTH, tier: "free",    file: "long01" },
+  { id: "hair_ponytail", name: "Ponytail",     slot: "hair",     bodies: BOTH, tier: "free",    file: "ponytail01" },
+  { id: "hair_braid",    name: "Braid",        slot: "hair",     bodies: BOTH, tier: "free",    file: "braid01" },
+  { id: "hair_cropped",  name: "Cropped",      slot: "hair",     bodies: BOTH, tier: "free",    file: "short01" },
+  { id: "hair_buzz",     name: "Buzz",         slot: "hair",     bodies: BOTH, tier: "free",    file: "short04" },
+  { id: "hair_messy",    name: "Messy",        slot: "hair",     bodies: BOTH, tier: "free",    file: "cortu_short_messy_hair" },
+  { id: "hair_bun",      name: "Bun",          slot: "hair",     bodies: BOTH, tier: "free",    file: "rehmanpolanski_hair_bun_brown" },
+  { id: "hair_frbraid",  name: "French braid", slot: "hair",     bodies: BOTH, tier: "premium", file: "elvs_french_braid_variation" },
+  { id: "hair_headband", name: "Headband",     slot: "hair",     bodies: BOTH, tier: "premium", file: "sonntag78_blond_with_headband" },
+  { id: "hair_afro",     name: "Afro",         slot: "hair",     bodies: BOTH, tier: "premium", file: "afro01" },
   // Eyebrows
-  { id: "brows_soft",    name: "Soft",        slot: "eyebrows", bodies: ["female", "male"], tier: "free" },
-  { id: "brows_bold",    name: "Bold",        slot: "eyebrows", bodies: ["female", "male"], tier: "free" },
+  { id: "brows_soft",    name: "Soft",         slot: "eyebrows", bodies: BOTH, tier: "free",    file: "eyebrow001" },
+  { id: "brows_arched",  name: "Arched",       slot: "eyebrows", bodies: BOTH, tier: "free",    file: "eyebrow006" },
+  { id: "brows_bold",    name: "Bold",         slot: "eyebrows", bodies: BOTH, tier: "free",    file: "eyebrow010" },
   // Tops
-  { id: "top_tee",       name: "T-shirt",     slot: "top",      bodies: ["female", "male"], tier: "free" },
-  { id: "top_tank",      name: "Tank top",    slot: "top",      bodies: ["female", "male"], tier: "free" },
-  { id: "top_crop",      name: "Crop top",    slot: "top",      bodies: ["female"],         tier: "free" },
-  { id: "top_hoodie",    name: "Hoodie",      slot: "top",      bodies: ["female", "male"], tier: "premium" },
+  { id: "top_tee",       name: "Grey tee",     slot: "top",      bodies: BOTH, tier: "free",    file: "toigo_basic_tucked_t-shirt", tint: false },
+  { id: "top_loosetee",  name: "White tee",    slot: "top",      bodies: BOTH, tier: "free",    tint: false,
+    file: { female: "joepal_crude_t-shirt_female", male: "elvs_crude_t-shirt_male" } },
+  { id: "top_tank",      name: "Giraffe tank", slot: "top",      bodies: BOTH, tier: "free",    file: "toigo_keyhole_tank_top", tint: false },
+  { id: "top_camisole",  name: "Camisole",     slot: "top",      bodies: BOTH, tier: "free",    file: "toigo_camisole_top", tint: false },
+  { id: "top_halter",    name: "Halter",       slot: "top",      bodies: BOTH, tier: "free",    file: "toigo_turtleneck_halter_top", tint: false },
+  { id: "top_crop",      name: "Tube top",     slot: "top",      bodies: ["female"], tier: "free", file: "skalldyrssuppe_tube_top_funky_colors", tint: false },
+  { id: "top_polo",      name: "Polo",         slot: "top",      bodies: BOTH, tier: "free",    file: "namuhekam_male_polo_shirt", tint: false },
+  { id: "top_sweater",   name: "Sweater",      slot: "top",      bodies: BOTH, tier: "premium", file: "toigo_fisherman_sweater", tint: false },
   // Bottoms
-  { id: "bottom_jeans",  name: "Jeans",       slot: "bottom",   bodies: ["female", "male"], tier: "free" },
-  { id: "bottom_shorts", name: "Shorts",      slot: "bottom",   bodies: ["female", "male"], tier: "free" },
-  { id: "bottom_skirt",  name: "Skirt",       slot: "bottom",   bodies: ["female"],         tier: "free" },
-  { id: "bottom_cargo",  name: "Cargo pants", slot: "bottom",   bodies: ["female", "male"], tier: "premium" },
+  { id: "bottom_pants",  name: "Black pants",  slot: "bottom",   bodies: BOTH, tier: "free",    file: "toigo_wool_pants", tint: false },
+  { id: "bottom_shorts", name: "Jean shorts",  slot: "bottom",   bodies: BOTH, tier: "free",    file: "cortu_jeans_shorts", tint: false },
+  { id: "bottom_harem",  name: "Harem pants",  slot: "bottom",   bodies: BOTH, tier: "free",    file: "toigo_harem_pants", tint: false },
+  { id: "bottom_skirt",  name: "Plaid mini",   slot: "bottom",   bodies: BOTH, tier: "free",    file: "frankyaye_mini_skirt_01", tint: false },
+  { id: "bottom_ruffle", name: "Ruffle skirt", slot: "bottom",   bodies: BOTH, tier: "free",    file: "toigo_tiered_mini_skirt", tint: false },
+  { id: "bottom_cargo",  name: "Cargo pants",  slot: "bottom",   bodies: BOTH, tier: "premium", file: "cortu_cargo_pants", tint: false },
+  { id: "bottom_maxi",   name: "Maxi skirt",   slot: "bottom",   bodies: BOTH, tier: "premium", file: "toigo_long_full_skirt", tint: false },
   // Shoes
-  { id: "shoes_sneakers",name: "Sneakers",    slot: "shoes",    bodies: ["female", "male"], tier: "free" },
-  { id: "shoes_boots",   name: "Boots",       slot: "shoes",    bodies: ["female", "male"], tier: "free" },
-  { id: "shoes_platform",name: "Platforms",   slot: "shoes",    bodies: ["female", "male"], tier: "premium" },
+  { id: "shoes_sneakers",name: "Brown sneakers", slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes01", tint: false },
+  { id: "shoes_grey",    name: "Grey sneakers",  slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes05", tint: false },
+  { id: "shoes_blue",    name: "Blue sneakers",  slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes06", tint: false },
+  { id: "shoes_black",   name: "Black sneakers", slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes04", tint: false },
+  { id: "shoes_dark",    name: "Dark sneakers",  slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes02", tint: false },
+  { id: "shoes_combat",  name: "Combat boots",   slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes03", tint: false },
+  { id: "shoes_boots",   name: "Ankle boots",    slot: "shoes",  bodies: BOTH, tier: "free",    file: "toigo_ankle_boots_male", tint: false },
+  { id: "shoes_flats",   name: "Flats",          slot: "shoes",  bodies: BOTH, tier: "free",    file: "toigo_flats", tint: false },
+  { id: "shoes_platform",name: "Go-go platforms", slot: "shoes", bodies: BOTH, tier: "premium", file: "scailman_gogo_platform_boots", tint: false },
+  { id: "shoes_tall",    name: "Tall boots",     slot: "shoes",  bodies: BOTH, tier: "premium", file: "culturalibre_male_boots", tint: false },
 ];
 
 export const bodyById = (id) => BODIES.find((b) => b.id === id) ?? null;
@@ -89,8 +118,13 @@ export const partsFor = (body, slot) => PARTS.filter((p) => p.slot === slot && p
 export const defaultPart = (body, slot) => partsFor(body, slot).find((p) => p.tier === "free") ?? null;
 // Where the files live, relative to client/assets/.
 export const bodyModel = (body) => `parts/${body}/body.glb`;
-export const partModel = (body, partId) => `parts/${body}/${partId}.glb`;
-export const PARTS_ANIMS = "parts/anims.json";
+export function partModel(body, partId) {
+  const f = partById(partId)?.file ?? partId;
+  return `parts/${body}/${typeof f === "string" ? f : f[body] ?? partId}.glb`;
+}
+// The part's swatch color, or null when the part keeps its own colors (tint: false).
+export const partTintHex = (partId, slot, i) => (partById(partId)?.tint === false ? null : partColorHex(slot, i));
+export const partsAnims = (body) => `parts/${body}/anims.json`;
 
 export const skinHex = (i) => SKIN_TONES[i] ?? SKIN_TONES[0];
 export const partColorHex = (slot, i) => { const c = partSlotById(slot)?.colors ?? []; return c[i] ?? c[0] ?? "#ffffff"; };

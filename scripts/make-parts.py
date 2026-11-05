@@ -13,14 +13,20 @@
 #   skins/<id>.webp   alternative skin textures for the body's material.
 # and <out>/manifest.json listing every file plus each part's slot and hide bit.
 #
-# Textures are capped at TEX_MAX px and saved as WebP to keep downloads small. Every asset used here
-# comes from MakeHuman's CC0 packs (system assets, hair01, shoes01, eyebrows01, shirts01, pants01, skirts01).
-import bpy, sys, os, json, glob
+# Textures are capped at TEX_MAX px and saved as WebP to keep downloads small. Hair and eyebrow textures
+# are turned light grey so the game's hair colors tint them cleanly (shared/parts.js). Materials are
+# written as alpha MASK (cut-out) rather than BLEND, so they sort and draw like solid surfaces in the
+# game; the body's skin is fully OPAQUE. Every asset used here comes from MakeHuman's CC0 packs
+# (system assets, hair01, shoes01, eyebrows01, shirts01, pants01, skirts01).
+import bpy, sys, os, json, glob, struct
+import numpy as np
 from bl_ext.blender_org.mpfb.services import LocationService
 from bl_ext.blender_org.mpfb.services.humanservice import HumanService
 from bl_ext.blender_org.mpfb.services.targetservice import TargetService
 
 TEX_MAX = 1024
+HAIR_CUTOFF = 0.35    # hair cards fade out at the tips; a low cutoff keeps them full
+CLOTH_CUTOFF = 0.5
 
 BODIES = {
     "female": {"gender": 0.0, "skin": "young_caucasian_female",
@@ -75,6 +81,53 @@ def strip_subdivision(obj):
     for m in list(obj.modifiers):
         if m.type == "SUBSURF":
             obj.modifiers.remove(m)
+
+
+def greyscale_textures(obj):
+    """Turn the base color textures of obj's materials into light grey (keeping alpha), for tinting."""
+    for slot in obj.material_slots:
+        if not slot.material or not slot.material.use_nodes:
+            continue
+        for node in slot.material.node_tree.nodes:
+            img = getattr(node, "image", None)
+            if node.type != "TEX_IMAGE" or not img or img.get("fv_grey") or img.colorspace_settings.name != "sRGB":
+                continue
+            px = np.empty(len(img.pixels), dtype=np.float32)
+            img.pixels.foreach_get(px)
+            px = px.reshape(-1, 4)
+            lum = px[:, 0] * 0.2126 + px[:, 1] * 0.7152 + px[:, 2] * 0.0722
+            seen = px[:, 3] > 0.1
+            lo, hi = np.percentile(lum[seen], [2, 98]) if seen.any() else (0.0, 1.0)
+            grey = 0.45 + 0.55 * np.clip((lum - lo) / max(hi - lo, 1e-3), 0, 1)   # keep strand detail, stay light
+            px[:, 0] = px[:, 1] = px[:, 2] = grey
+            img.pixels.foreach_set(px.ravel())
+            img["fv_grey"] = True
+
+
+def set_alpha_modes(path, mode_for):
+    """Rewrite each material's alphaMode in a .glb. mode_for(material_name) -> ("OPAQUE"|"MASK", cutoff)."""
+    with open(path, "rb") as f:
+        b = f.read()
+    json_len = struct.unpack_from("<I", b, 12)[0]
+    j = json.loads(b[20:20 + json_len])
+    for m in j.get("materials", []):
+        mode, cutoff = mode_for(m.get("name", ""))
+        m["alphaMode"] = mode
+        m.pop("alphaCutoff", None)
+        if mode == "MASK":
+            m["alphaCutoff"] = cutoff
+    js = json.dumps(j, separators=(",", ":")).encode()
+    js += b" " * ((4 - len(js) % 4) % 4)
+    rest = b[20 + json_len:]
+    with open(path, "wb") as f:
+        f.write(struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(js) + len(rest)))
+        f.write(struct.pack("<I", len(js)) + b"JSON" + js + rest)
+
+
+def body_alpha(name):
+    if name.endswith(".body"):
+        return "OPAQUE", None
+    return "MASK", HAIR_CUTOFF    # eyelashes, eyes
 
 
 def export(objects, path):
@@ -133,6 +186,7 @@ for body, cfg in BODIES.items():
         attr.data.foreach_set("value", [float(v) for v in values])
 
     size = export([rig, basemesh, eyes, lashes], os.path.join(out, "body.glb"))
+    set_alpha_modes(os.path.join(out, "body.glb"), body_alpha)
     print(f"PART {body}/body.glb {size / 1e6:.2f}MB")
 
     # Alternative skin textures: the diffuse map of each skin, shrunk and saved as WebP.
@@ -159,7 +213,12 @@ for body, cfg in BODIES.items():
             part = HumanService.add_mhclo_asset(asset_file(ASSET_DIR[slot], name, "mhclo"), basemesh,
                                                 asset_type=ASSET_TYPE[slot], material_type="GAMEENGINE")
             strip_subdivision(part)
+            hairy = slot in ("hair", "eyebrows")
+            if hairy:
+                greyscale_textures(part)
             size = export([rig, part], os.path.join(out, name + ".glb"))
+            cutoff = HAIR_CUTOFF if hairy else CLOTH_CUTOFF
+            set_alpha_modes(os.path.join(out, name + ".glb"), lambda _n: ("MASK", cutoff))
             entry = {"slot": slot, "file": name + ".glb"}
             if slot in CLOTHING_SLOTS:
                 entry["hideBit"] = bit
