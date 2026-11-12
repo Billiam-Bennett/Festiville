@@ -8,9 +8,9 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 
 | File | What it does |
 |---|---|
-| `shared/sim.js` | Movement rules (speed, map bounds, input cleanup). Used by BOTH server and browser. |
+| `shared/sim.js` | Movement rules: speed, the edge of the grounds, input cleanup, and **collision** (you can't walk through stages, stalls, tents, trees, the river or camps; players gently push apart). Used by BOTH server and browser. |
 | `server/schema.js` | The state every player sees: name, position, facing, emote. |
-| `server/FestivalRoom.js` | One festival instance: 100 players max, 20 ticks/sec, server owns all positions. |
+| `server/FestivalRoom.js` | The festival room: 20 ticks/sec, server owns all positions (players per room: `FV_ROOM_SIZE`, see Scaling). |
 | `server/index.js` | Starts the game server on port 2567: game traffic, the vendor API, and the game page, all on one port. |
 | `server/vendors.js` | Vendor listings (menus, upcoming stops) and their private edit keys, saved in `data/`. |
 | `server/api.js` | The small web API vendors save through (`/api/vendors`). |
@@ -29,7 +29,7 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 | `client/builder.html` + `builder.js` | **The festival builder**: a top-down map you edit with a walk-around 3D preview. Organizers only. |
 | `server/layout.js` | Saves and version-history the festival layout; applies it on startup. |
 | `scripts/layout.mjs` | Manage the layout from the command line (`npm run layout`): show, export, import, history, restore, reset. |
-| `client/world.js` | Builds the 3D grounds from `venue.js`: perimeter fence and main gate, stages, food trucks and picnic tables, Shakedown Street tents, campground, trees, lights. |
+| `client/world.js` | Builds the 3D grounds from `venue.js`: fence and main gate, stages with their genre signs, food trucks, Shakedown Street, paths, the river and bridges, forests, the Ferris wheel, art, shuttle stops, lights. |
 | `client/truck.js` + `shared/truck-data.js` | The food-truck model vendors design (body/awning/stripe/trim colors + a roof topper), built from simple shapes. |
 | `client/camera.js` | Third-person camera with zoom (wheel, pinch, +/- keys or buttons); tilts toward top-down as you pull out. |
 | `client/map.js` | Draws the 2D festival map, used by both the minimap and the full map. |
@@ -44,6 +44,9 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 | `server/accounts.js` | Player accounts: sign-up, sign-in sessions, and saved progress (badges, last look, premium unlocks), stored in `data/`. |
 | `Dockerfile`, `deploy/` | Hosting: the server in Docker, with automatic HTTPS (Caddy), plus helper scripts for accounts, vendor links and backups. |
 | `scripts/loadtest.mjs` | Load test: hundreds of fake players, to measure how many one server can hold (`npm run loadtest`). |
+| `scripts/tickbench.mjs` | What one game tick costs for 100–2,000 players, without networking (`npm run tickbench`). |
+| `shared/dj.js` + `server/dj.js` + `client/dj-ui.js` | **Stage music**: DJ profiles, linked mixes on each stage, the open rules (who can DJ, order, set length), the record of who linked what, and in the browser the music fading with distance, mute and volume, and the 🎧 panel. |
+| `shared/rides.js` + `server/rides.js` + `client/rides-ui.js` | **Rides**: the Ferris wheel, the golf cart, and the shuttle between sections. |
 | `scripts/account.mjs` | Look after accounts from the command line (`npm run account`): list, unlock looks, reset passwords, staff, mutes, bans, reports. |
 | `server/moderation.js` | Player reports (with the reported player's recent chat) and the log of staff actions, saved in `data/moderation.json`. |
 | `client/moderation-ui.js` | The Report sheet, and the staff buttons (mute, kick, ban) on the player card. |
@@ -53,7 +56,8 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 | `desktop/` + `Install FestiVille app.bat` | **The desktop app** (Electron): the game in its own window with the server built in, plus the one-time installer that makes the desktop icon. |
 | `client/manifest.json`, `client/assets/icon-*.png` | App name and icon, so the game can be installed from the browser or added to a phone's home screen. |
 | `scripts/serve-client.js` | Tiny web server for the game page (nothing extra to install). |
-| `test/sim.test.js` | Movement tests (walk speed, run speed, no speed hacks, can't leave the map). |
+| `test/sim.test.js` | Movement and collision tests (speeds, no speed hacks, can't leave the grounds, stages stop you, sliding around, the river and bridges, players can't stand in each other, every quest spot still reachable). |
+| `test/dj.test.js`, `test/rides.test.js` | Stage music rules and moderation; the Ferris wheel, golf cart and shuttle. |
 | `test/quests.test.js` | Crew and quest tests: invites, crew cap, all three quests, timers, failing, cleanup. |
 | `test/bots.js` | Two fake players that sign in and walk in circles, to prove the network part works. |
 
@@ -109,6 +113,10 @@ Open http://localhost:5173 in **two browser windows**, create a different accoun
 **Controls:** WASD or arrows to walk, hold Shift to run, **Space** to jump, **E** to dance, **1-9** or the **Emote** button for the rest: dance, bounce, fist pump, clap, wave, cheer, point, thumbs up and sit (everyone sees them; walking away ends a dance or stands you up; you can jump while running). On phones, use the joystick; push it to the edge to run. The emote list is `shared/emotes.js`.
 
 **Getting around:** scroll the mouse wheel, press **+ / -**, or pinch to zoom the camera (all the way out gives a bird's-eye view). The minimap in the top-right corner shows you (pink arrow), crewmates (blue), other players (white), quest givers (yellow) and quest objectives. Tap it, press **M**, or tap **Map** for the full festival map: drag to pan, scroll or pinch to zoom, and pick a vendor from the list or the map.
+
+**The bigger grounds:** the festival is four sections (see "The grounds" below), so there are faster ways around than running: **🚌 shuttle stops** in every section (walk up to one and pick where to go; free, but not while you're on a timed quest), the **🎡 Ferris wheel** (free; walk up and tap **Ride**, then look around with WASD or the joystick while you go round), and the **🛺 golf cart** for premium members. You can't walk through stages, stalls, tents, trees, other people's camps or the river: go round, or over a bridge.
+
+**Stage music:** walk up to a stage while a DJ set is on and you'll hear it, loud up front and fading as you walk away. The **🔊** button at the top mutes it any time; the "now playing" card has a volume slider and a link to the DJ's page. **🎧** shows what's on every stage and is where DJs sign up.
 
 ## Accounts and saved progress
 
@@ -189,7 +197,8 @@ npm run account -- make-admin <your username>
 ```
 
 In the builder:
-- **Add** anything from the left palette — click it, then click the map to drop it (hold Shift to place several).
+- **Add** anything from the left palette — click it, then click the map to drop it (hold Shift to place several). Besides stages, stalls and areas there are **paths**, **rivers / lakes** (players can't walk into water), **bridges** (the way across), **forests** (one piece = a whole wood of solid tree trunks, kept clear of paths), the **Ferris wheel**, **art / service tents**, and **shuttle stops**.
+- **Stages have a genre** (EDM, Rap / R&B, Rock / Alternative, Bluegrass & more, or open). Pick it in the stage's panel; DJs' mixes have to match it.
 - **New vendors:** place a **Vendor stall**, then in its panel pick **➕ New vendor…** to type a stall name, a short id, a tagline, and a starting menu (dish + price rows). Existing vendors keep their own menus; a brand-new one starts with what you type here and can later edit it with their vendor link (`npm run vendor-link -- <id>`).
 - **Move** by dragging; **select** by clicking to edit it on the right (turn, size, color, label, which vendor or character…); **Delete** or press Delete.
 - **Preview** switches to a 3D walk-around of exactly what players will see. **Map** switches back.
@@ -209,10 +218,27 @@ npm run layout -- export mine.json   # save a copy / import mine.json to load on
 
 The layout is saved in `data/layout.json`. Vendors still edit their own **listings** (menus, prices, upcoming stops) separately — see below.
 
+## The grounds: four sections
+
+The grounds are about **400 × 400 m** (the fence is at ±199 m; it was ±99 m). That size is one number, `FENCE` in `shared/layout.js`: the walkable limit in `shared/sim.js`, the gate, the spawn point, the ground, the maps and the builder all follow it.
+
+| Section | Where | What's there |
+|---|---|---|
+| **Main Field** | middle, north of the river | Main Stage (EDM), the path loop, the Food Court, the Ferris wheel, Info & First Aid |
+| **East Side** | east, through the forest | East Stage (Rap / R&B), Shakedown Street, the Art Field |
+| **The Grove** | west, through the forest | Garage Stage (Rock / Alternative), Back Porch Stage (Bluegrass & more), picnic tables |
+| **Campground** | south of the river, by the gate | two big camping fields (West and East) with room for thousands of free 10×10 camps |
+
+The three festival sections sit side by side with a belt of forest between them; **forest paths with string lights** go through the trees. The **Festival River** runs between them and the Campground, with a **river walk** along the bank and **three bridges** (the main one from the gate lane, two footbridges). You come in through the gate, walk up the lane between the two camping fields, and cross the main bridge.
+
+**Nothing about the sections is locked in.** Their names, colors, which stage plays which genre, and what's in each are all layout data: rename or refill them in the festival builder. The layout is still capped at 24 hanging lamps (each is a real light), and a forest is drawn as two instanced meshes however many trees it has, so the bigger map stays phone-friendly.
+
+A layout saved for the old small grounds is set aside (in `data/layout-history/`) the first time the new server starts, and the new four-section layout is used instead.
+
 ## Food Court and Shakedown Street
 
-- **Food Court** (west side): eight food trucks and picnic tables, including Hippie Dips and Mama Rae's Tacos.
-- **Shakedown Street** (north-east): twelve pop-up tents selling tie-dye, pins, crystals, grilled cheese and more.
+- **Food Court** (Main Field, just north of the main bridge): eight food trucks and picnic tables, including Hippie Dips and Mama Rae's Tacos.
+- **Shakedown Street** (East Side): twelve pop-up tents selling tie-dye, pins, crystals, grilled cheese and more.
 
 Tap any stall, or walk up to it and press **T** / tap **Browse**, to see its menu (or what it sells) and **where they'll be next**. **Take me there** drops a waypoint: a white light in the world and a marker on the minimap (an arrow on its rim when it's out of range). Arriving opens that vendor's card.
 
@@ -235,7 +261,7 @@ Send the link to the vendor privately: anyone who has it can edit that stall. Ru
 
 **Where edits are saved:** `data/vendors.json` (listings) and `data/vendor-keys.json` (a scrambled hash of each key, never the key itself). Back up the `data` folder, and don't share it or commit it. Saves are checked on the server (lengths, prices, real dates, safe website links) and rate-limited, and repeated wrong keys get locked out for a minute.
 
-The grounds are fenced in (players stop just inside the fence); the main gate is on the south side past the campground.
+The grounds are fenced in (players stop just inside the fence); the main gate is on the south side, at the Entrance Plaza between the two camping fields.
 
 ## Crews and side quests
 
@@ -247,8 +273,19 @@ The grounds are fenced in (players stop just inside the fence); the main gate is
 | Quest | Giver | Crew | What you do |
 |---|---|---|---|
 | Lost & Found | Juniper, near the middle | Solo or crew | Find 3 totem pieces hidden around the grounds (different spots each time), bring them back. Anyone in the crew can grab pieces. |
-| Soundcheck | Dex, by the main stage | **Crew of 2+ only** | One person on the main stage marker and another on the side stage marker at the same time for 3 seconds. |
-| Vendor Rush | Mama Rae, vendor row | Solo or crew | Carry taco orders from the stand to campground tents before time runs out (2:30). Bigger crews get more orders but can split the running. |
+| Soundcheck | Dex, by the main stage | **Crew of 2+ only** | One person on the Main Stage marker and another on the East Stage marker (through the forest path) at the same time for 3 seconds. 4:00 to do it. |
+| Vendor Rush | Mama Rae, Food Court | Solo or crew | Carry taco orders from the stand, over the bridge, to Campground tents before time runs out (4:00, up from 2:30 because the Campground is further now). Bigger crews get more orders but can split the running. |
+| Get Weird Run | Sunny, by the gate | Solo or crew | **Sponsored by Hippie Dips.** Go to the Hippie Dips stall, talk to them, and hold the blender lid at the counter. 3:00. |
+
+Every quest spot is checked against collision in the tests (`test/sim.test.js`): quest givers, the Soundcheck markers, totem hiding spots, the Vendor Rush tents and the fronts of the stalls can all be reached, and the Vendor Rush run fits in its time limit.
+
+### Business (sponsored) quests
+
+A business can sponsor a side quest. Vendor Rush is the model: a real vendor, a real stall, a real task, a time limit. A business quest is a normal quest (giver, dialogue, task, timer, reward) plus a **sponsor**: their name, their stall, and one line from them. The quest ends at their stall: walk there, talk to the vendor, and do the task at the counter. The sponsor shows as **"Sponsored by …"** in the quest dialog and the tracker. It's part of the quest, never a pop-up ad.
+
+The example is **Get Weird Run**, sponsored by Hippie Dips. To add another, copy its entry in `shared/quests-data.js` (the template's fields are explained right there). It needs a giver in `GIVERS` (and a spot for them in the layout) and a reward in `QUEST_REWARDS`. It needs **no new code**. The same anti-farm rules apply: the full reward the first time, less on repeats, and repeats stop paying after 300 credits a day.
+
+**There's no self-serve dashboard for businesses.** A business asks Billiam, and an organizer writes the quest.
 
 **Adding a quest:** add its giver and text in `shared/quests-data.js`, its rules in `server/quests.js` (a `tick…` function like the others), and what to draw in `client/quests-ui.js`. Add a test in `test/quests.test.js` so you know it works without playing through it.
 
@@ -257,6 +294,43 @@ The grounds are fenced in (players stop just inside the fence); the main gate is
 The page loads Three.js and the Colyseus client from the jsDelivr CDN, so the browser needs internet. If Colyseus ever fails to load from jsDelivr, change its line in the `importmap` in `client/index.html` to `https://esm.sh/colyseus.js@0.16`.
 
 The game server also serves the page itself at http://localhost:2567, so `npm run client` is optional. Once hosted, just open your domain. To point a local page at a hosted server instead: `http://localhost:5173/?server=wss://your-server.com`.
+
+## Stages, genres and DJ music
+
+DJs play their music on the stages **for free, for exposure**. Nobody is paid. A stage in FestiVille is how new DJs get heard, and the DJ's name links to their own page so the exposure lands somewhere.
+
+- **Every stage has a genre**, set in the festival builder: EDM, Rap / R&B, Rock / Alternative, Bluegrass & more, or an open stage. It shows on the stage's sign and on the map. A DJ picks the genre of their mix, and it has to match the stage: a rap mix is refused on the EDM stage, with a suggestion of where it fits. (The game can't hear what's in a mix, so the genre is the DJ's word. Staff can stop a set that's on the wrong stage.)
+- **Link, don't upload.** A DJ links a mix that's already on **SoundCloud, Mixcloud or YouTube** and the game plays that stream. No audio is ever stored on the FestiVille server; only the link is.
+- **Music fades with distance:** loud at the stage, quiet across the field, silent in the Campground. Only the loudest stage you're near plays, so it's one stream at a time. Everyone hears the same moment of the set. SoundCloud and YouTube fade smoothly. Mixcloud's player has no volume control, so a Mixcloud set plays when you're near the stage and stops when you walk away.
+- **Mute and volume, always:** 🔊 at the top of the screen mutes all stage music; the "now playing" card has a volume slider. Both are remembered on that device.
+- **DJ profile:** a DJ name and a link to their own page. **🎧 → Play your music here** to sign up. The signup says it plainly, and the DJ has to tick it: **only your own music or your own mixes.**
+- **Moderation and takedowns:** staff can **stop a set** (from the now-playing card or 🎧) and **remove a DJ** (all their sets stop and they can't link again until restored). **Every signup, link, stop and removal is on record**: who, when, and which link. It's kept in `data/dj.json` and shown to staff in 🎧. It works like player reports (`server/moderation.js`).
+
+**Decisions that aren't made yet are settings, not code.** Who can DJ, who picks the order and how long a set is all live in `data/dj.json`. They can be changed while the server runs:
+
+```bash
+npm run account -- dj-rules                                 # show them
+npm run account -- dj-rules signup=open order=schedule set=45
+#   signup=approved   only DJs staff approve can link a mix (what a fresh server starts with)
+#   signup=open       any member who signs up as a DJ
+#   order=first-come  a mix goes on now, or queues behind what's playing (fresh server)
+#   order=schedule    DJs pick a free start time
+#   order=organizer   mixes wait until staff put them on
+#   set=60            minutes per set (0 = until the DJ or staff end it)
+npm run account -- dj-list                    # every DJ, and what's on each stage
+npm run account -- dj-approve <username>
+npm run account -- dj-remove <username> [reason]   # dj-restore <username> undoes it
+npm run account -- dj-stop stage_main [reason]
+npm run account -- dj-log [username]          # the record
+```
+
+A stage's DJ, mix link and times are data too (DJ slots in `data/dj.json`). Nothing about who plays where is hard-coded.
+
+## Rides
+
+- **🎡 Ferris wheel** (Main Field, by the Food Court). **Free**, like everything else about hanging out. Walk up, tap **Ride**, and you're in the gondola at the bottom (12 gondolas, 4 seats each). It goes round slowly (2½ minutes a turn) up to about 33 m, above everything else on the grounds. While you're up there the camera shows you the whole festival; look around with WASD, the arrows or the joystick. You can't walk, dance or start a quest while you're on it. You're set down at the bottom after one turn, or you can step off early whenever your gondola is near the ground. Everyone sees the wheel turning and who's in each gondola, because it turns on the room's clock.
+- **🛺 Golf cart**. A premium status item, and the quick way around the bigger grounds. It's faster than running (11 m/s against 6.5), and everyone sees who's riding in one (gold trim). It's parked at your camp. Tap 🛺 to drive it anywhere; tap again to park it and it goes back to your camp. A cart is bigger than a person and can't go through things either. **Who gets one** is the `GOLF_CART` switch in `shared/economy.js`. **What's on now: it comes with premium membership.** Set `price` to a number of credits to also sell it in the shop to anyone. No passenger seat in this version.
+- **🚌 Shuttle**. Stops in every section. Walk up to one, pick another stop, and you're there. It's free, but it doesn't run while your crew is on a timed quest (otherwise Vendor Rush would be one tap), or while you're in a golf cart.
 
 ## Credits and the shop
 
@@ -269,14 +343,25 @@ FestiVille has its own currency, **credits** (🪙). Every new player starts wit
 | Lost & Found | 150 | 40 |
 | Soundcheck | 250 | 70 |
 | Vendor Rush | 200 | 60 |
+| Get Weird Run (sponsored) | 180 | 50 |
 
 **Spending credits:**
 
-- **⛺ Camp.** Claim your own spot in the Campground: walk to where you want it, pick a size and claim it. A green outline shows your spot fits, and a red one comes with the reason it doesn't. Spots are **10×10** (200), **10×20** (450) and **20×20** (900); upgrading pays the difference. Every camp comes with a dome tent. Buy more for it, then **Set up** or **Pack away** each item:
-  - everyday items: chairs, cooler, fire pit, shade canopy, hammock, bell tent, string lights, flag
-  - **featured** items: a **PA system**, a **laser rig**, a **neon sign** with your name, and a **disco ball**
+- **⛺ Camp.** **Every member, free or paid, gets one free 10×10 camp spot**, like camping at a real festival. Walk to where you want it in the Campground and claim it: a green outline shows it fits, and a red one comes with the reason it doesn't. One camp per account: **Move camp here** moves it for free, and **Give back spot** frees it (claim a free one again any time).
+  - **10×20** is a credit upgrade (450 credits) for anyone.
+  - **20×20 is for premium members** and isn't sold for credits. It comes with the **premium bundle**, the "you can find my camp in the dark" set: an **LED tent** (glows at night; pick its colour), the **neon name sign**, **string lights** and the **camp flag**. Non-members can still buy the sign, lights and flag for credits.
+  - **Build it out as much as you like** with credits, bought or earned in quests. Then **Set up** or **Pack away** each thing:
 
-  Ground items need space in your spot, so bigger spots hold more. Lights, flags and signs go around the edge. Everyone sees your camp, even while you're offline. **Move camp here** moves it for free; **Give back spot** frees it with no refund, and you keep your items.
+    | | Things for your camp (credits) |
+    |---|---|
+    | Shelter | dome tent (free), bell tent 300, LED tent (premium), shade canopy 180, tent tapestry with your name 120, tent-top flag 60 |
+    | Hanging out | camp chairs 60, cooler 40, fire pit 150, hammock 150, inflatable couch 140, picnic table 120, ground rug 50, cooking grate (on the fire pit) 40 |
+    | Light and show | PA system 600 ★, string lights 80, camp flag 100, neon name sign 500 ★, laser rig 900 ★, disco ball 700 ★, fireworks launcher 800 ★, lit totem pole 450, lanterns on posts 120, glow stick border 40 |
+    | Food and drink | grill and camp kitchen 250, mini taco stand (a little Mama Rae's) 500 ★, lemonade stand 200, campfire cooking pot (over the fire pit) 60 |
+    | Social and fun | outdoor movie screen 700 ★, hot tub 850 ★, photo booth frame 300, camp signpost 80, flower garden 90, a camp dog 400 |
+
+    Ground items need space in your spot, so bigger spots hold more. Edge items go around it. The tapestry and tent flag go on your tent, and the grate or pot go over your fire pit (one at a time), so those need it set up. Tents and ground items are solid; the open grass in your spot isn't, so friends can hang out in your camp. Everyone sees your camp, even while you're offline.
+  - **Left out for now: the guestbook** (visitors leaving a message at your camp). It's a new message board players write on, so it needs its own moderation (reports, removal, a word filter) before it's safe. Everything else on the list is in.
 - **🕶️ Wear.** Premium things to wear around the festival: festival totem, shutter shades, heart glasses, top hat, halo, fairy wings. Once you own one, put it on from 👕.
 - **🧍 Looks.** Premium characters and character parts.
 - **🪙 Credits.** How to earn credits, and the credit packs. Buying packs with real money is **not open yet**. The packs and the server hook (`grantPack` in `server/shop.js`) are ready for a payment provider. The plan is **PayPal Business**: a PayPal order for the pack, then PayPal's payment-captured webhook calls `grantPack` with the capture id, so a repeated webhook can't credit twice. Until that's connected, give credits from the command line:
@@ -294,11 +379,20 @@ npm run account -- camp-release <username>            # take back a camp spot (n
 
 - starting credits, quest rewards and the daily cap
 - credit packs
-- camp spot sizes and prices
-- camp items
+- camp spot sizes and prices (and which one is premium)
+- camp items, their categories, and the premium bundle
+- the golf cart switch (`GOLF_CART`)
 - `UNLOCK_PRICES` for premium wearables and looks
 
-A new camp item also needs its 3D shape in `buildItem()` in `client/camps.js`. A new wearable needs an entry in `shared/accessories.js` and a shape in `client/accessories.js`.
+A new camp item also needs its 3D shape in `buildItem()` in `client/camps.js`.
+
+**Premium membership** is an unlock on the account, the same unlock system premium looks use. What membership costs isn't decided, and nothing in the code sets a price. Until a payment does it, make someone a member by hand:
+
+```bash
+npm run account -- unlock <username> premium     # the 20×20, the premium bundle, the golf cart
+npm run account -- lock <username> premium       # undo
+npm run account -- unlock <username> golfcart    # just a golf cart, for one account
+``` A new wearable needs an entry in `shared/accessories.js` and a shape in `client/accessories.js`.
 
 **The rules for credits** (also shown to players in the 🪙 Credits tab):
 
@@ -432,7 +526,8 @@ Quest givers can wear any character too: set `look` on each giver in `shared/que
 - The browser never tells the server where the player is, only which way the keys or joystick are pushed. The server moves everyone, which makes teleport and speed cheats impossible.
 - Your own character moves instantly (prediction) and gets nudged if the server disagrees.
 - Other players are smoothed between server updates so they don't jitter.
-- `WORLD_HALF_SIZE` in `shared/sim.js` sets the map size (currently 200 × 200 meters); `WALK_LIMIT` keeps players inside the fence. Walking is 3 m/s and running 6.5 m/s.
+- `FENCE` in `shared/layout.js` sets the size of the grounds (about 400 × 400 m); `WORLD_HALF_SIZE` and `WALK_LIMIT` in `shared/sim.js` follow it. Walking is 3 m/s, running 6.5 m/s, a golf cart 11 m/s.
+- **Collision runs on the server**, in the same `shared/sim.js` the browser uses to predict your moves, so a modified browser can't walk through walls. What's solid comes from the layout (`TYPES[...].solid` in `shared/layout.js`: stages, stalls, tents, tables, the Ferris wheel and art are boxes; trees are their trunks; water is blocked except on a bridge) and from what's set up in camps. You slide along things instead of sticking to them. Players are small circles that gently drift apart (slower than walking, so nobody can be boxed in).
 - Quest rules run only on the server using the server's own positions, so nobody can fake finding an item or standing on a marker.
 - Animations aren't sent over the network. Each browser works out Idle / Walk / Run from how fast a player is moving, so it costs no extra bandwidth. Only the emote is synced (`emote` and `emoteSeq` in `server/schema.js`; see `shared/emotes.js`).
 
@@ -441,7 +536,9 @@ Quest givers can wear any character too: set `look` on each giver in `shared/que
 - **Forgot-password emails:** for now, resets are done by hand with `npm run account -- reset-password`.
 - **More quests,** including ones that unlock cosmetics (glow outfits, new dances).
 - **Vendor photos and specials:** a stall photo and a "today's special" banner on the vendor card.
-- **Scaling (Milestone 3):** split the grounds into zones so thousands can be online, with lower-detail characters far away.
+- **Scaling:** zones (interest management) so one shared room can hold far more than 100 players. See "Scaling: one shared world".
+- **Camp guestbooks**, once there's moderation for player-written notes.
+- **More rides** (carousel, swings, bumper cars), and a passenger seat in the golf cart.
 
 ## Hosting (when you want friends to join from anywhere)
 
@@ -492,17 +589,42 @@ npm run loadtest -- 200                       # from another terminal: 200 fake 
 npm run loadtest -- 500 wss://play.yourfestival.com    # against the hosted server
 ```
 
+**To test one shared world**, start the server with `FV_ROOM_SIZE=1000` too, so every fake player lands in the same room instead of being split into rooms of 100: `FV_ROOM_SIZE=1000 FV_SIGNUPS_PER_HOUR=100000 npm start`.
+
+`npm run tickbench` measures the game rules alone (movement, collision, quests, rides) for 100 to 2,000 players without any networking.
+
 Fake players (`lt_0001`, `lt_0002`, …) join, walk around and chat. Every 5 seconds it prints the response time (key press → server confirms the move; under 150 ms feels fine), updates per second (should stay near 20), and the server's tick time (fine under ~25 ms of its 50 ms budget). At the end it says whether the server coped. Past ~300 fake players, run the load test from a second computer so your own machine isn't the bottleneck. For the hosted test, `deploy/setup-server.sh` already raises the sign-up limit; afterwards set `FV_SIGNUPS_PER_HOUR=` (empty) in `deploy/.env` and run the `up -d` line again to go back to the default.
 
-### Growing to 1,000+ players at once
+### Scaling: one shared world
 
-Today each festival room holds 100 players (`FV_ROOM_SIZE`), and more rooms open as it fills, like separate copies of the festival. One Node process runs them all on a single CPU core. The load test tells you where that tops out. The path from there:
+**The requirement:** everybody can interact with everybody, in one shared world. Today a room holds 100 players (`FV_ROOM_SIZE`) and more rooms open as it fills. That doesn't crash, but it splits people into copies of the festival, and that is **not** the answer.
 
-1. **Bigger rooms that stay smooth — zones.** Split the grounds into areas and only send each player what's near them. Then a copy of the festival can hold far more than 100 players, and crowds don't cost bandwidth for people across the field.
-2. **Several game processes — Redis.** Colyseus can spread rooms over several processes or servers that share a Redis. That uses every CPU core and lets you add servers.
-3. **A real database — Postgres.** With more than one process, accounts, vendors and reports can't live in JSON files anymore. They move to Postgres; the rest of the code keeps calling the same store methods.
+**What's measured so far** (Nov 12, 2026):
 
-Managed Postgres and Redis are about $15 each per month at DigitalOcean. Do the load test first: if one server already handles your expected crowd, you don't need any of this yet.
+- **The game rules are cheap.** `npm run tickbench`, on a 2-core cloud machine, with players crowded at the stages, the Food Court and the Campground, and some on quests and on the Ferris wheel:
+
+  | players in one room | game tick, average | p95 | share of the 50 ms tick |
+  |---|---|---|---|
+  | 200 | 0.10 ms | 0.18 ms | 0.2% |
+  | 500 | 0.30 ms | 0.47 ms | 0.6% |
+  | 1,000 | 0.77 ms | 1.13 ms | 1.5% |
+  | 2,000 | 1.74 ms | 2.78 ms | 3.5% |
+
+  So movement, collision, the push between players and quests aren't what limits one shared room.
+- **The real load test (`npm run loadtest -- 200` and `-- 500`) still needs to be run** on a machine that can install the packages. It measures what the tick bench can't: sending every player's moves to every other player. Run it with `FV_ROOM_SIZE=1000` so it tests one shared room (above).
+
+**What to expect, and why zones are the next step:** with one room and no zones, every player gets every other player's moves, 20 times a second. That's roughly 25–30 bytes per moving player per update. This is an estimate, to be checked against the load test. Per player it comes to about **0.7 Mbit/s with 200 people online and 1.7 Mbit/s with 500**, and the server sends that to everyone: on the order of 140 Mbit/s and 850 Mbit/s. It grows with the square of the crowd, so a few hundred players in one room is where it hurts, especially on phones.
+
+**The next step: zones (interest management) in one room.** One room holds everyone. The server only sends each player what's near them (say within 80–100 m), plus the far-away players at a low rate so the map still shows them. A crowd at the Main Stage then costs nothing for someone in the Campground, and anyone can still walk up to anyone, because walking closer is what brings them into view. Colyseus 0.16 has per-player views (`StateView`) for exactly this. Chat already works this way ("nearby" is 25 m). The new map's sections help too: the forest belts and the river keep crowds apart.
+
+**After that, if the crowd outgrows one CPU core:** several game processes that share the world through **Redis**, and accounts, camps, vendors and the DJ record move from JSON files to **Postgres** (the code keeps calling the same store methods).
+
+| Players at once | Setup | Roughly |
+|---|---|---|
+| a few hundred | 1 server, 2 GB RAM, plus zones | $5–12 / month |
+| ~1,000 | 2–3 servers + Postgres + Redis | $40–80 / month |
+
+Managed Postgres and Redis are about $15 each per month at DigitalOcean. Bandwidth is the thing to watch on the bill: zones are what keep it in the included allowance.
 
 ### Settings
 
