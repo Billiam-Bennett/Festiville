@@ -25,6 +25,7 @@
 
 import { Client } from "colyseus.js";
 import { TICK_RATE, sanitizeInput, applyInput } from "../shared/sim.js";
+import { onWheel } from "../shared/rides.js";
 
 const SNAP_DISTANCE = 3;      // if we're this far off from the server, teleport instead of smoothing
 const CORRECTION = 0.15;      // how quickly the local player eases toward the server's position
@@ -63,17 +64,20 @@ export async function connectMultiplayer({ url, THREE, scene, localObject, getIn
     const players = room.state?.players;
     if (!players) return;
 
-    // 1. Send input at the server's tick rate and predict our own movement immediately.
+    // 1. Send input at the server's tick rate and predict our own movement immediately, with the same
+    //    rules the server uses (shared/sim.js: speed, collision, a golf cart's speed and size). On the
+    //    Ferris wheel there's nothing to predict: the server moves us with our gondola.
+    const me = players.get(room.sessionId);
+    local.ride = me?.ride ?? "";
     sendTimer += dt;
     while (sendTimer >= sendEvery) {
       sendTimer -= sendEvery;
       const input = sanitizeInput({ ...getInput(), seq: ++seq });
       room.send("input", input);
-      applyInput(local, input, sendEvery);
+      if (!onWheel(local.ride)) applyInput(local, input, sendEvery);
     }
 
     // 2. Reconcile with the server's authoritative position.
-    const me = players.get(room.sessionId);
     // Rebuild our own avatar if the server changed our look/accessories (from the Looks button).
     if (me && sigOf(me) !== localSig) {
       localSig = sigOf(me);

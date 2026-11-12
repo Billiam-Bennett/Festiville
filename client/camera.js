@@ -43,11 +43,23 @@ export function createCameraRig(THREE, camera, canvas, scene) {
   canvas.addEventListener("pointerup", lift);
   canvas.addEventListener("pointercancel", lift);
 
+  // A ride can take the camera over (client/rides-ui.js: the view from the top of the Ferris wheel).
+  // view(dt, camera) is called instead of following; null hands the camera back.
+  let override = null;
   return {
     zoomBy,
     get zoom() { return zoom; },
+    setView(fn) {
+      override = fn;
+      if (!fn && fog0) { scene.fog.near = fog0.near; scene.fog.far = fog0.far; }
+    },
     // Called every frame with the character to follow.
     update(dt, follow) {
+      if (override) {
+        override(dt, camera);
+        if (fog0) { scene.fog.near = 120; scene.fog.far = 900; }   // from up there you can see the whole festival
+        return;
+      }
       zoom += (target - zoom) * (1 - Math.exp(-8 * dt));
       const t = Math.min(1, Math.max(0, (zoom - 1) / (MAX - 1)));
       const pitch = LOW + (HIGH - LOW) * (t * t * (3 - 2 * t));
