@@ -1,13 +1,23 @@
 // The shop and credit rewards: all the rules about credits, with no networking in here (the game room
 // calls these; test/economy.test.js tests them directly). The server is the only place balances change.
-import { UNLOCK_PRICES, campItemById, CREDIT_PACKS, QUEST_REWARDS, DAILY_REPEAT_CAP, unlockableById, shopCatalog } from "../shared/economy.js";
+import { UNLOCK_PRICES, MEMBERSHIP, campItemById, PREMIUM_BUNDLE, GOLF_CART, CREDIT_PACKS, QUEST_REWARDS, DAILY_REPEAT_CAP, unlockableById, shopCatalog } from "../shared/economy.js";
 
 export { unlockableById, shopCatalog };
 
 // Buy one thing. Returns { ok, text, balance } or { error }.
-export function buy(store, accountId, itemId) {
+// premium: the buyer is a premium member, so the premium bundle is already theirs.
+export function buy(store, accountId, itemId, { premium = false } = {}) {
   const a = store.get(accountId);
   if (!a || typeof itemId !== "string") return { error: "Couldn't find that." };
+  // The golf cart: only sold when GOLF_CART.price is set (shared/economy.js); premium members may already have one.
+  if (itemId === GOLF_CART.id) {
+    if (a.unlocks.includes(GOLF_CART.id) || (premium && GOLF_CART.premium)) return { error: "You already have a golf cart. It's parked at your camp." };
+    if (!Number.isInteger(GOLF_CART.price)) return { error: GOLF_CART.premium ? `Golf carts come with premium membership (${MEMBERSHIP.name}).` : "That isn't for sale." };
+    const paid = store.changeCredits(accountId, -GOLF_CART.price, `buy:${itemId}`);
+    if (paid.error) return paid;
+    store.grant(accountId, GOLF_CART.id);
+    return { ok: true, text: "You got a golf cart! It's parked at your camp. Tap 🛺 to drive it.", balance: paid.balance };
+  }
   const unlock = UNLOCK_PRICES[itemId] != null ? unlockableById(itemId) : null;
   const camp = !unlock ? campItemById(itemId) : null;
   if (unlock && unlock.tier === "premium") {
@@ -18,7 +28,8 @@ export function buy(store, accountId, itemId) {
     store.grant(accountId, itemId);
     return { ok: true, text: `You got ${unlock.name}!`, balance: paid.balance };
   }
-  if (camp && camp.price > 0) {
+  if (camp && premium && PREMIUM_BUNDLE.includes(itemId)) return { error: `${camp.name} comes with your premium camp. Set it up from the Camp tab.` };
+  if (camp && camp.price > 0 && !camp.premium) {
     if (store.campItems(a).includes(itemId)) return { error: `You already own ${camp.name}.` };
     const paid = store.changeCredits(accountId, -camp.price, `buy:${itemId}`);
     if (paid.error) return paid;

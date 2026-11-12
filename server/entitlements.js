@@ -7,6 +7,7 @@
 import { CHARACTERS, lookById, DEFAULT_LOOK } from "../shared/characters.js";
 import { accessoryById, normalizeAccessories } from "../shared/accessories.js";
 import { PARTS, partById, parseRecipe, formatRecipe, defaultPart } from "../shared/parts.js";
+import { PREMIUM_MEMBERSHIP, PREMIUM_BUNDLE, GOLF_CART } from "../shared/economy.js";
 
 const UNLOCK_ALL = process.env.FV_UNLOCK_ALL === "1";
 
@@ -79,3 +80,23 @@ export function resolveAppearance(account, requested = {}, current = {}) {
 
 // Anything premium that can be unlocked on an account, by id (characters, accessories, parts).
 export const unlockableById = (id) => lookById(id) || accessoryById(id) || partById(id) || null;
+
+// ---------- Premium membership ----------
+// A paid/premium member is an account with the "premium" unlock (the same unlock list premium looks
+// use): `npm run account -- unlock <username> premium`, later a membership payment. Members get the
+// 20×20 camp spot and the premium camp bundle; nothing else is gated. Hanging out is always free.
+export function isPremiumMember(account) {
+  return UNLOCK_ALL || !!account?.unlocks?.includes(PREMIUM_MEMBERSHIP);
+}
+
+// Camp items a player may set up: the ones they own (plus the free ones), and for premium members
+// the premium bundle. `store` is the AccountStore.
+export function ownedCampItems(store, account) {
+  return [...new Set([...store.campItems(account), ...(isPremiumMember(account) ? PREMIUM_BUNDLE : [])])];
+}
+
+// The golf cart: premium members have one (while GOLF_CART.premium is on), and so does any account
+// with the "golfcart" unlock (bought in the shop when GOLF_CART.price is set, or granted by hand).
+export function hasGolfCart(account) {
+  return UNLOCK_ALL || (GOLF_CART.premium && isPremiumMember(account)) || !!account?.unlocks?.includes(GOLF_CART.id);
+}

@@ -50,6 +50,8 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
     else toast(m.text || `${m.name} ended.`, "error", 6000);
   });
   room.onMessage("offer", showOffer);
+  // Business quests: what the vendor says when you talk to them at the sponsor's stall.
+  room.onMessage("sponsorTalk", (m) => toast(`${m.sponsor}: "${m.line}"`, "big", 7000));
   room.onMessage("invite", (m) => {
     $("iv-text").textContent = `${m.fromName} invited you to their crew`;
     show("invite");
@@ -76,8 +78,10 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
     setTimeout(() => ($("tr-quit").textContent = "Quit quest"), 3000);
   };
   let promptGiver = null;
-  $("prompt").onclick = () => promptGiver && room.send("talk", promptGiver.id);
+  let promptVendor = "";   // business quest: the sponsor to talk to, when you're at their stall
+  $("prompt").onclick = () => (promptVendor ? room.send("questTalk") : promptGiver && room.send("talk", promptGiver.id));
   addEventListener("keydown", (e) => {
+    if (e.code === "KeyT" && promptVendor && document.activeElement?.tagName !== "INPUT") { room.send("questTalk"); e.stopImmediatePropagation(); return; }
     if (e.code === "KeyT" && promptGiver && document.activeElement?.tagName !== "INPUT") room.send("talk", promptGiver.id);
     if (e.code === "Escape") for (const id of ["offer", "player-card", "vendor", "report"]) $(id).hidden = true;
   });
@@ -92,6 +96,13 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
     $("of-who").textContent = `${m.giverName} · ${giverById(m.giverId)?.role ?? ""}`;
     $("of-name").textContent = m.name;
     $("of-pitch").textContent = `"${m.pitch}"`;
+    // A business quest names its sponsor right in the dialog (it's part of the quest, not an ad).
+    const sp = $("of-sponsor");
+    sp.hidden = !m.sponsor;
+    if (m.sponsor) {
+      sp.replaceChildren(Object.assign(document.createElement("b"), { textContent: `Sponsored by ${m.sponsor.name}` }), ` · ${m.sponsor.message} `);
+      if (/^https:\/\//.test(m.sponsor.link)) sp.append(Object.assign(document.createElement("a"), { href: m.sponsor.link, target: "_blank", rel: "noopener noreferrer", textContent: m.sponsor.link.replace(/^https:\/\//, "") }));
+    }
     $("of-how").textContent = m.howTo;
     // Credits shown are a guide: repeats pay less, and stop paying after the daily cap (shared/economy.js).
     const r = QUEST_REWARDS[m.questId];
@@ -185,6 +196,7 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
       else if (quest.orders.some((o) => o.state === "waiting")) questGroup.add(beacon(THREE, giverById("rae"), 0xffd36b));
       for (const o of quest.orders) if (o.state === "carried" && o !== mine) questGroup.add(beacon(THREE, o, 0x7dff6b, 0.35));
     }
+    if (QUESTS[quest.id]?.type === "business") questGroup.add(beacon(THREE, quest, 0xff9f1c));   // the sponsor's stall
   }
 
   function syncCarried() {
@@ -249,6 +261,8 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
     if (!quest || !p) return;
     const q = QUESTS[quest.id];
     $("tr-name").textContent = q.name;
+    $("tr-sponsor").hidden = !q.sponsor;
+    if (q.sponsor) $("tr-sponsor").textContent = `Sponsored by ${q.sponsor.name}`;
     const left = quest.endsAt ? Math.max(0, quest.endsAt - room.state.time) : 0;
     $("tr-timer").textContent = quest.endsAt ? `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")} left` : "";
     const m = (pt) => `${Math.round(dist(p, pt))} m`;
@@ -265,7 +279,7 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
     if (quest.id === "soundcheck") {
       const who = (ids) => (ids.length ? ids.map(nameOf).join(", ") : "nobody yet");
       frac = quest.hold / q.holdSeconds;
-      obj = `Stand on the blue rings at the same time.<br>Main stage: ${esc(who(quest.onMain))} · ${m(q.markers.main)}<br>Side stage: ${esc(who(quest.onSide))} · ${m(q.markers.side)}`;
+      obj = `Stand on the blue rings at the same time.<br>Main stage: ${esc(who(quest.onMain))} · ${m(q.markers.main)}<br>${esc(q.markers.side.label)}: ${esc(who(quest.onSide))} · ${m(q.markers.side)}`;
     }
     if (quest.id === "vendorrush") {
       const done = quest.orders.filter((o) => o.state === "delivered").length;
@@ -275,6 +289,12 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
       else if (quest.orders.some((o) => o.state === "waiting")) obj = `Grab an order at Mama Rae's (yellow light) · ${m(giverById("rae"))}`;
       else obj = "Your crew is delivering the last orders!";
       obj += `<br>Delivered: ${done}/${quest.orders.length}`;
+    }
+    if (q.type === "business") {
+      const name = esc(q.sponsor.name);
+      if (quest.stage === "go") obj = `Head to the ${name} stall (orange light) · ${m(quest)}`;
+      else if (quest.stage === "talk") obj = `Talk to ${name} at the counter · ${m(quest)}`;
+      else { frac = quest.hold / q.task.holdSeconds; obj = `${esc(q.task.label)}. Stay at the ${name} counter · ${m(quest)}`; }
     }
     if ($("tr-obj").innerHTML !== obj) $("tr-obj").innerHTML = obj;
     $("tr-bar").style.width = `${Math.round(Math.min(1, frac) * 100)}%`;
@@ -305,8 +325,11 @@ export function setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar }) 
 
     // Talk prompt for the nearest quest giver in range.
     promptGiver = givers.filter((g) => dist(p, g) <= TALK_RANGE - 0.5).sort((a, b) => dist(p, a) - dist(p, b))[0] ?? null;
-    $("prompt").hidden = !promptGiver || !$("offer").hidden;
-    if (promptGiver) $("prompt").textContent = `Talk to ${promptGiver.name}`;
+    const bq = quest && QUESTS[quest.id]?.type === "business" && quest.stage === "talk" ? QUESTS[quest.id] : null;
+    promptVendor = bq && dist(p, quest) <= bq.task.range ? bq.sponsor.name : "";
+    $("prompt").hidden = (!promptGiver && !promptVendor) || !$("offer").hidden;
+    if (promptVendor) $("prompt").textContent = `Talk to ${promptVendor}`;
+    else if (promptGiver) $("prompt").textContent = `Talk to ${promptGiver.name}`;
     updatePanels();
   }
 

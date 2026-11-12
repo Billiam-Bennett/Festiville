@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sanitizeLayout, defaultLayout } from "../shared/layout.js";
+import { sanitizeLayout, defaultLayout, LAYOUT_VERSION } from "../shared/layout.js";
 import { applyLayout } from "../shared/venue.js";
 import { GIVERS, AMBIENT } from "../shared/quests-data.js";
 
@@ -29,6 +29,19 @@ export class LayoutStore {
     if (existsSync(this.file)) {
       try { saved = JSON.parse(readFileSync(this.file, "utf8")); }
       catch (err) { console.error(`Couldn't read ${this.file} (${err.message}); using the starting layout.`); }
+    }
+    // A layout saved for the old, smaller grounds would sit in one corner of the new map with no river
+    // or bridges. Set it aside in the history folder (npm run layout -- history / restore) and start
+    // from the new four-section layout.
+    if (saved && (saved.layout?.version ?? 1) < LAYOUT_VERSION) {
+      try {
+        mkdirSync(this.historyDir, { recursive: true });
+        const name = `layout-before-v${LAYOUT_VERSION}-${new Date(this.now()).toISOString().replace(/[:.]/g, "-")}.json`;
+        writeFileSync(join(this.historyDir, name), JSON.stringify(saved, null, 1));
+        unlinkSync(this.file);
+        console.log(`The saved festival layout was made for the old, smaller grounds. It's kept as data/layout-history/${name}; the game is using the new four-section layout.`);
+      } catch (err) { console.error(`Couldn't set aside the old layout: ${err.message}`); }
+      saved = null;
     }
     const out = saved ? sanitizeLayout(saved.layout, layoutRules()) : null;
     this.layout = out?.layout ?? defaultLayout();

@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSyn
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkSpot, cleanCampItems, snap } from "../shared/camps.js";
-import { plotById, plotRank } from "../shared/economy.js";
+import { plotById, plotRank, MEMBERSHIP, FREE_CAMP_ITEMS, PREMIUM_BUNDLE, cleanLedColor, campItemById } from "../shared/economy.js";
 import { LAYOUT } from "../shared/venue.js";
 
 const DEFAULT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "data");
@@ -43,7 +43,7 @@ export class CampStore {
   // What everyone may see about a camp. The public id is the owner's name, not their account id.
   public(accountId) {
     const c = this.camps[accountId];
-    return c ? { id: c.owner.toLowerCase(), owner: c.owner, x: c.x, z: c.z, plot: c.plot, items: [...c.items] } : null;
+    return c ? { id: c.owner.toLowerCase(), owner: c.owner, x: c.x, z: c.z, plot: c.plot, items: [...c.items], ...(c.led ? { led: c.led } : {}), ...(c.cart ? { cart: true } : {}) } : null;
   }
   all() { this.refresh(); return Object.keys(this.camps).map((id) => this.public(id)); }
   of(accountId) { this.refresh(); return this.camps[accountId] ?? null; }
@@ -65,6 +65,8 @@ export class CampStore {
     this.camps[accountId] = {
       owner, x, z, plot,
       items: cleanCampItems(items ?? prev?.items ?? ["tent_basic"], owned, plot),
+      ...(prev?.led ? { led: prev.led } : {}),
+      ...(prev?.cart ? { cart: true } : {}),
       updatedAt: new Date().toISOString(),
     };
     this.save(accountId);
@@ -78,6 +80,24 @@ export class CampStore {
     c.updatedAt = new Date().toISOString();
     this.save(accountId);
     return { camp: this.public(accountId) };
+  }
+
+  // The colour of the LED tent (premium bundle). Any camp can store one; it only shows on an LED tent.
+  setLed(accountId, color) {
+    const c = this.of(accountId);
+    if (!c) return { error: "Claim a camp spot first." };
+    c.led = cleanLedColor(color);
+    c.updatedAt = new Date().toISOString();
+    this.save(accountId);
+    return { camp: this.public(accountId) };
+  }
+
+  // Does the owner have a golf cart? It's shown parked at their camp while they aren't driving it.
+  setCart(accountId, has) {
+    const c = this.of(accountId);
+    if (!c || !!c.cart === !!has) return;
+    if (has) c.cart = true; else delete c.cart;
+    this.save(accountId);
   }
 
   release(accountId) {
@@ -117,11 +137,66 @@ export class CampStore {
   }
 }
 
-// What upgrading from one spot size to another costs (the difference), or null if it isn't bigger.
+// What upgrading from one spot size to another costs in credits (the difference), or null if it
+// isn't bigger. The premium 20×20 is never sold for credits: it costs 0 here and the caller checks
+// membership (claimCamp / upgradeCamp below).
 export function upgradeCost(fromPlot, toPlot) {
   const a = plotById(fromPlot), b = plotById(toPlot);
   if (!a || !b || plotRank(toPlot) <= plotRank(fromPlot)) return null;
-  return b.price - a.price;
+  return b.premium ? 0 : Math.max(0, b.price - a.price);
+}
+
+// ---------- Claiming and upgrading (the camp rule) ----------
+// Every member gets one free 10×10. The 10×20 is a credit upgrade. The 20×20 is for premium members
+// only and comes with the premium bundle set up. No networking here: the game room passes in the
+// account store, the camp store, the account, whether they're a premium member, and what they own.
+// Both return { ok, text } or { error }.
+
+// A premium camp starts with the bundle set up: the LED tent instead of the plain one, plus the
+// neon sign, string lights and flag.
+function withBundle(items) {
+  const rest = items.filter((id) => campItemById(id)?.group !== "tent" && !PREMIUM_BUNDLE.includes(id));
+  return [...PREMIUM_BUNDLE, ...rest];
+}
+
+export function claimCamp(store, camps, account, { x, z, plot }, { premium = false, owned = FREE_CAMP_ITEMS } = {}) {
+  if (camps.of(account.id)) return { error: "You already have a camp. Use Move or Upgrade instead." };
+  const size = plotById(plot);
+  if (!size) return { error: "Pick a spot size." };
+  if (size.premium && !premium) return { error: `The ${size.name} comes with premium membership (${MEMBERSHIP.name}). Your free 10×10 is ready to claim.` };
+  const why = camps.check(account.id, x, z, size.id);
+  if (why) return { error: why };
+  if (size.price > 0) {
+    const paid = store.changeCredits(account.id, -size.price, `camp:${size.id}`);
+    if (paid.error) return paid;
+  }
+  const out = camps.place(account.id, account.username, { x, z, plot: size.id, items: size.premium ? withBundle(["tent_basic"]) : ["tent_basic"] }, owned);
+  if (out.error) {
+    if (size.price > 0) store.changeCredits(account.id, size.price, `refund:camp:${size.id}`);
+    return out;
+  }
+  return { ok: true, text: size.price > 0 || size.premium ? `Your ${size.name} is yours! Set up your camp from the Camp tab.` : `Your free ${size.name} is yours! Set up your camp from the Camp tab.` };
+}
+
+export function upgradeCamp(store, camps, account, plot, { premium = false, owned = FREE_CAMP_ITEMS } = {}) {
+  const mine = camps.of(account.id);
+  if (!mine) return { error: "Claim a camp spot first." };
+  const size = plotById(plot);
+  const cost = upgradeCost(mine.plot, plot);
+  if (cost == null) return { error: "Pick a bigger spot size." };
+  if (size.premium && !premium) return { error: `The ${size.name} comes with premium membership (${MEMBERSHIP.name}). It can't be bought with credits.` };
+  const why = camps.check(account.id, mine.x, mine.z, plot);
+  if (why) return { error: `There isn't room to grow here (${why}) Move somewhere roomier first.` };
+  if (cost > 0) {
+    const paid = store.changeCredits(account.id, -cost, `camp:upgrade:${plot}`);
+    if (paid.error) return paid;
+  }
+  const out = camps.place(account.id, account.username, { x: mine.x, z: mine.z, plot, items: size.premium ? withBundle(mine.items) : mine.items }, owned);
+  if (out.error) {
+    if (cost > 0) store.changeCredits(account.id, cost, `refund:camp:upgrade:${plot}`);
+    return out;
+  }
+  return { ok: true, text: `Upgraded to a ${size.name}!` };
 }
 
 let shared = null;
