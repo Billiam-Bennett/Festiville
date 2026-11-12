@@ -3,6 +3,7 @@
 // test/rides.test.js tests this directly).
 import { WHEEL, SHUTTLE, freeGondola, fromBottom, nextBottom, boardPoint, gondolaPos, stopsOf, stopAt } from "../shared/rides.js";
 import { resolveSolids, inWater } from "../shared/sim.js";
+import { MEMBERSHIP } from "../shared/economy.js";
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
@@ -72,7 +73,7 @@ export class RideSystem {
   // parked at your camp, so you need one.
   cart(id, on, { owns = false, hasCamp = false } = {}) {
     if (!on) { this.carts.delete(id); return; }
-    if (!owns) return this.err(id, "Golf carts are for premium members.");
+    if (!owns) return this.err(id, `Golf carts are for premium members (${MEMBERSHIP.name}).`);
     if (!hasCamp) return this.err(id, "Your golf cart is parked at your camp. Claim your camp spot first (🪙 → Camp).");
     if (this.wheel.has(id)) return this.err(id, "Get off the Ferris wheel first.");
     this.carts.add(id);

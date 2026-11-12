@@ -2,7 +2,7 @@
 // The browser only shows and asks; the server (server/shop.js, FestivalRoom.handleCamp) decides,
 // takes the credits and answers with a "wallet" message (balance, unlocks, camp items, whether you're a
 // premium member, your camp).
-import { PLOTS, plotById, plotRank, CAMP_ITEMS, CAMP_CATEGORIES, campItemById, PREMIUM_BUNDLE, LED_COLORS, cleanLedColor, GOLF_CART, CREDIT_PACKS, CREDIT_TERMS, QUEST_REWARDS, shopCatalog } from "../shared/economy.js";
+import { PLOTS, plotById, plotRank, MEMBERSHIP, CAMP_ITEMS, CAMP_CATEGORIES, campItemById, PREMIUM_BUNDLE, LED_COLORS, cleanLedColor, GOLF_CART, CREDIT_PACKS, CREDIT_TERMS, QUEST_REWARDS, shopCatalog } from "../shared/economy.js";
 import { checkSpot, groundCapacity, cleanCampItems } from "../shared/camps.js";
 import { LAYOUT } from "../shared/venue.js";
 import { QUESTS } from "../shared/quests-data.js";
@@ -71,7 +71,7 @@ export function setupShop({ mp, toast, account, camps, me }) {
   // ---------- Camp ----------
   // The rule (shared/economy.js): everyone gets one free 10×10; the 10×20 is a credit upgrade; the
   // 20×20 comes with premium membership (with the premium bundle) and is never sold for credits.
-  const plotTag = (p) => (p.premium ? (wallet.premium ? "included with premium" : "premium members") : p.price ? coins(p.price) : "free");
+  const plotTag = (p) => (p.premium ? (wallet.premium ? "included with premium" : `${MEMBERSHIP.name} members`) : p.price ? coins(p.price) : "free");
   const yourPlot = (p) => (p.premium ? `Your ${p.name.replace(" spot", "")} premium camp` : p.price ? `Your ${p.name}` : `Your free ${p.name.replace(" spot", "")}`);
   function campTab() {
     const out = [];
@@ -80,15 +80,15 @@ export function setupShop({ mp, toast, account, camps, me }) {
       if (!pickedPlot) plotChoice = (wallet.premium ? PLOTS.find((p) => p.premium) : PLOTS[0]).id;
       out.push(el("p", {}, el("b", { textContent: wallet.premium ? "Your 20×20 premium camp is waiting." : "Your free 10×10 is waiting." })));
       out.push(el("p", { className: "small", textContent: wallet.premium
-        ? "Premium members get a 20×20 spot with the LED tent, neon name sign, string lights and camp flag. Walk to where you want it in the Campground and claim it. Everyone will see your camp, even when you're offline."
-        : "Every member gets one free 10×10 camp spot, like camping at a real festival. Walk to where you want it in the Campground and claim it. Everyone will see your camp, even when you're offline." }));
+        ? `As a ${MEMBERSHIP.name} member you get a 20×20 spot with the LED tent, neon name sign, string lights and camp flag. Walk to where you want it in the Campground and claim it. Everyone will see your camp, even when you're offline.`
+        : `Every member gets one free 10×10 camp spot, like camping at a real festival. Walk to where you want it in the Campground and claim it. Everyone will see your camp, even when you're offline. ${MEMBERSHIP.name} members (${MEMBERSHIP.price} in the ${MEMBERSHIP.app} app) get a 20×20 with an LED tent, neon sign, lights and a flag, plus a golf cart.` }));
       const sizes = el("div", { className: "chips" });
       for (const p of PLOTS) {
         const locked = p.premium && !wallet.premium;
         const b = el("button", { type: "button", textContent: `${p.name.replace(" spot", "")} · ${plotTag(p)}`, className: locked ? "locked" : "" });
         b.setAttribute("aria-pressed", String(p.id === plotChoice));
         b.onclick = () => {
-          if (locked) return toast("The 20×20 comes with premium membership. Your free 10×10 is ready to claim.");
+          if (locked) return toast(`The 20×20 comes with ${MEMBERSHIP.name} membership (${MEMBERSHIP.price} in the ${MEMBERSHIP.app} app). Your free 10×10 is ready to claim.`);
           plotChoice = p.id; pickedPlot = true; render();
         };
         sizes.append(b);
@@ -105,10 +105,10 @@ export function setupShop({ mp, toast, account, camps, me }) {
     for (const p of PLOTS.filter((p) => plotRank(p.id) > plotRank(mine.plot))) {
       const cost = p.premium ? 0 : Math.max(0, p.price - plot.price);
       const locked = p.premium && !wallet.premium;
-      const text = locked ? `${p.name.replace(" spot", "")} · premium members` : p.premium ? `Upgrade to your ${p.name.replace(" spot", "")} · included` : `Upgrade to ${p.name} · ${coins(cost)}`;
+      const text = locked ? `${p.name.replace(" spot", "")} · ${MEMBERSHIP.name} members` : p.premium ? `Upgrade to your ${p.name.replace(" spot", "")} · included` : `Upgrade to ${p.name} · ${coins(cost)}`;
       const b = el("button", { type: "button", className: "btn-sm", textContent: text, onclick: () => room.send("camp", { action: "upgrade", plot: p.id }) });
       b.disabled = locked || wallet.credits < cost;
-      if (locked) b.title = "The 20×20 comes with premium membership. It isn't sold for credits.";
+      if (locked) b.title = `The 20×20 comes with ${MEMBERSHIP.name} membership. It isn't sold for credits.`;
       actions.append(b);
     }
     plotChoice = mine.plot;
@@ -128,7 +128,7 @@ export function setupShop({ mp, toast, account, camps, me }) {
         const where = item.on === "tent" ? "Goes on your tent" : item.on === "firepit" ? "Goes over your fire pit" : item.place === "edge" ? "Goes around your spot" : "Uses ground space";
         const note = [item.featured ? "★ Featured" : "", bundled ? "Included with premium" : "", where, item.group === "tent" ? "One tent at a time" : item.group === "overfire" ? "One at a time over the fire" : ""].filter(Boolean).join(" · ");
         if (!has) {
-          out.push(row(item.name, note, item.premium ? el("span", { className: "small", textContent: "Premium members" }) : buyBtn(item.id, item.price)));
+          out.push(row(item.name, note, item.premium ? el("span", { className: "small", textContent: `${MEMBERSHIP.name} members` }) : buyBtn(item.id, item.price)));
           continue;
         }
         const toggle = el("button", { type: "button", className: "btn-sm " + (up ? "btn-ghost" : ""), textContent: up ? "Pack away" : "Set up" });
@@ -161,7 +161,7 @@ export function setupShop({ mp, toast, account, camps, me }) {
     out.push(heading("Ride"));
     if (wallet.cart) out.push(row(`🛺 ${GOLF_CART.name} ✓`, "Parked at your camp. Tap 🛺 to drive it anywhere on the grounds; park it and it goes back to your camp."));
     else if (Number.isInteger(GOLF_CART.price)) out.push(row(`🛺 ${GOLF_CART.name}`, "★ Faster than running, and everyone sees you ride in." + (GOLF_CART.premium ? " Included with premium." : ""), buyBtn(GOLF_CART.id, GOLF_CART.price)));
-    else out.push(row(`🛺 ${GOLF_CART.name}`, "★ Comes with premium membership: faster than running, parked at your camp, and everyone sees you ride in.", el("span", { className: "small", textContent: "Premium members" })));
+    else out.push(row(`🛺 ${GOLF_CART.name}`, `★ Comes with ${MEMBERSHIP.name} membership: faster than running, parked at your camp, and everyone sees you ride in.`, el("span", { className: "small", textContent: "Premium members" })));
     return out;
   }
   const groundUsed = (c) => c.items.filter((id) => { const i = campItemById(id); return i?.place === "ground" && !i.group; }).length;

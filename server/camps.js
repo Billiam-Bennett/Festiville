@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSyn
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkSpot, cleanCampItems, snap } from "../shared/camps.js";
-import { plotById, plotRank, FREE_CAMP_ITEMS, PREMIUM_BUNDLE, cleanLedColor, campItemById } from "../shared/economy.js";
+import { plotById, plotRank, MEMBERSHIP, FREE_CAMP_ITEMS, PREMIUM_BUNDLE, cleanLedColor, campItemById } from "../shared/economy.js";
 import { LAYOUT } from "../shared/venue.js";
 
 const DEFAULT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "data");
@@ -163,7 +163,7 @@ export function claimCamp(store, camps, account, { x, z, plot }, { premium = fal
   if (camps.of(account.id)) return { error: "You already have a camp. Use Move or Upgrade instead." };
   const size = plotById(plot);
   if (!size) return { error: "Pick a spot size." };
-  if (size.premium && !premium) return { error: `The ${size.name} comes with premium membership. Your free 10×10 is ready to claim.` };
+  if (size.premium && !premium) return { error: `The ${size.name} comes with premium membership (${MEMBERSHIP.name}). Your free 10×10 is ready to claim.` };
   const why = camps.check(account.id, x, z, size.id);
   if (why) return { error: why };
   if (size.price > 0) {
@@ -184,7 +184,7 @@ export function upgradeCamp(store, camps, account, plot, { premium = false, owne
   const size = plotById(plot);
   const cost = upgradeCost(mine.plot, plot);
   if (cost == null) return { error: "Pick a bigger spot size." };
-  if (size.premium && !premium) return { error: `The ${size.name} comes with premium membership. It can't be bought with credits.` };
+  if (size.premium && !premium) return { error: `The ${size.name} comes with premium membership (${MEMBERSHIP.name}). It can't be bought with credits.` };
   const why = camps.check(account.id, mine.x, mine.z, plot);
   if (why) return { error: `There isn't room to grow here (${why}) Move somewhere roomier first.` };
   if (cost > 0) {

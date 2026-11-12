@@ -46,11 +46,14 @@ export const CREDIT_PACKS = [
 ];
 
 // ---------- Premium membership ----------
-// A paid/premium member is an account with this unlock on it. It uses the same unlock list as premium
-// looks (server/entitlements.js → isPremiumMember), granted with
+// Premium in FestiVille IS the Hyre Personal membership of the Hyre Not Fyre app: there's no separate
+// FestiVille price (Billiam, Nov 12, 2026). A premium member is an account with this unlock on it, on
+// the same unlock list as premium looks (server/entitlements.js → isPremiumMember). Until FestiVille
+// accounts are linked to Hyre Not Fyre, staff grant it by hand:
 //   npm run account -- unlock <username> premium
-// until a membership payment does the same. What membership costs is not decided here.
+// FestiVille charges nothing itself; MEMBERSHIP is only what the game tells players (name and price).
 export const PREMIUM_MEMBERSHIP = "premium";
+export const MEMBERSHIP = { name: "Hyre Personal", price: "$5/month or $50/year", app: "Hyre Not Fyre" };
 
 // ---------- The golf cart ----------
 // A premium, rideable status item (shared/rides.js), parked at your camp. Who gets one hasn't been

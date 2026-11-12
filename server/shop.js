@@ -1,6 +1,6 @@
 // The shop and credit rewards: all the rules about credits, with no networking in here (the game room
 // calls these; test/economy.test.js tests them directly). The server is the only place balances change.
-import { UNLOCK_PRICES, campItemById, PREMIUM_BUNDLE, GOLF_CART, CREDIT_PACKS, QUEST_REWARDS, DAILY_REPEAT_CAP, unlockableById, shopCatalog } from "../shared/economy.js";
+import { UNLOCK_PRICES, MEMBERSHIP, campItemById, PREMIUM_BUNDLE, GOLF_CART, CREDIT_PACKS, QUEST_REWARDS, DAILY_REPEAT_CAP, unlockableById, shopCatalog } from "../shared/economy.js";
 
 export { unlockableById, shopCatalog };
 
@@ -12,7 +12,7 @@ export function buy(store, accountId, itemId, { premium = false } = {}) {
   // The golf cart: only sold when GOLF_CART.price is set (shared/economy.js); premium members may already have one.
   if (itemId === GOLF_CART.id) {
     if (a.unlocks.includes(GOLF_CART.id) || (premium && GOLF_CART.premium)) return { error: "You already have a golf cart. It's parked at your camp." };
-    if (!Number.isInteger(GOLF_CART.price)) return { error: GOLF_CART.premium ? "Golf carts come with premium membership." : "That isn't for sale." };
+    if (!Number.isInteger(GOLF_CART.price)) return { error: GOLF_CART.premium ? `Golf carts come with premium membership (${MEMBERSHIP.name}).` : "That isn't for sale." };
     const paid = store.changeCredits(accountId, -GOLF_CART.price, `buy:${itemId}`);
     if (paid.error) return paid;
     store.grant(accountId, GOLF_CART.id);

@@ -43,7 +43,7 @@ import { ACCESSORIES } from "../shared/accessories.js";
 import { PARTS } from "../shared/parts.js";
 import { unlockableById } from "../server/shop.js";
 import { CampStore } from "../server/camps.js";
-import { PREMIUM_MEMBERSHIP, GOLF_CART } from "../shared/economy.js";
+import { PREMIUM_MEMBERSHIP, MEMBERSHIP, GOLF_CART } from "../shared/economy.js";
 import { ModerationStore, REASONS, untilText } from "../server/moderation.js";
 import { DjStore } from "../server/dj.js";
 import { LayoutStore } from "../server/layout.js";
@@ -84,7 +84,7 @@ switch (cmd) {
     need();
     if (arg === PREMIUM_MEMBERSHIP) {
       store[cmd](username, PREMIUM_MEMBERSHIP);
-      console.log(cmd === "unlock" ? `${username} is now a premium member: they can claim or upgrade to the 20×20 camp spot, with the premium camp bundle.`
+      console.log(cmd === "unlock" ? `${username} is now a premium member (${MEMBERSHIP.name}): they can claim or upgrade to the 20×20 camp spot, with the premium camp bundle.`
         : `${username} is no longer a premium member. Their camp stays as it is until they change it.`);
       break;
     }

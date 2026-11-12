@@ -386,7 +386,7 @@ npm run account -- camp-release <username>            # take back a camp spot (n
 
 A new camp item also needs its 3D shape in `buildItem()` in `client/camps.js`.
 
-**Premium membership** is an unlock on the account, the same unlock system premium looks use. What membership costs isn't decided, and nothing in the code sets a price. Until a payment does it, make someone a member by hand:
+**Premium is the Hyre Personal membership** in the Hyre Not Fyre app ($5/month or $50/year). There's no separate FestiVille price, and FestiVille itself charges nothing. In the game it's an unlock on the account, the same unlock system premium looks use. The name and price players see are one setting (`MEMBERSHIP` in `shared/economy.js`). FestiVille accounts aren't linked to Hyre Not Fyre yet, so for now give Hyre Personal members their premium by hand:
 
 ```bash
 npm run account -- unlock <username> premium     # the 20×20, the premium bundle, the golf cart
