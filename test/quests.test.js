@@ -209,3 +209,89 @@ test("premium looks are locked unless the server unlocks them", async () => {
     assert.equal(resolveLook("p1", premium.id), DEFAULT_LOOK);
   }
 });
+
+// ---------- Business (sponsored) quests ----------
+import { vendorById, vendorFront, applyLayout } from "../shared/venue.js";
+import { defaultLayout } from "../shared/layout.js";
+import { GIVERS } from "../shared/quests-data.js";
+
+test("business quest template: every sponsored quest has a sponsor, a real stall, a task and a timer", () => {
+  const business = Object.entries(QUESTS).filter(([, q]) => q.type === "business");
+  assert.ok(business.length >= 1, "at least one example business quest");
+  for (const [id, q] of business) {
+    assert.ok(q.sponsor?.name && q.sponsor.message, `${id} sponsor name and message`);
+    assert.ok(vendorById(q.sponsor.stall), `${id} ends at a stall that's on the map`);
+    assert.ok(q.timeLimit > 0 && q.task?.holdSeconds > 0 && q.task.range > 0 && q.task.label && q.vendorLine, `${id} task`);
+    assert.ok(q.name && q.pitch && q.howTo && q.badge && GIVERS.some((g) => g.id === q.giver && g.quest === id), `${id} has the normal quest fields and a giver`);
+  }
+});
+
+test("Get Weird Run: the sponsor shows in the offer; walk to the stall, talk to the vendor, do the task there", () => {
+  const w = world();
+  const g = giverById("sunny"), q = QUESTS.getweird;
+  const front = vendorFront(vendorById("hippiedips"));
+
+  w.qs.talk("A", "sunny", near(g));
+  const offer = w.events("A", "offer")[0];
+  assert.equal(offer.questId, "getweird");
+  assert.deepEqual(offer.sponsor, { name: "Hippie Dips", message: q.sponsor.message, link: "https://hippiedips.com" });
+  assert.equal(offer.blocked, "");
+
+  w.at("A", near(g));
+  w.qs.startQuest("A", "sunny", w.pos, 0);
+  const crew = w.qs.crews.get(w.qs.players.get("A").crewId);
+  assert.equal(crew.quest.stage, "go");
+  assert.deepEqual({ x: crew.quest.x, z: crew.quest.z }, front);
+  assert.equal(JSON.parse(w.qs.publicQuest(crew)).stage, "go");
+
+  // Talking from across the field does nothing.
+  w.qs.vendorTalk("A", w.pos);
+  assert.match(w.events("A", "toast").at(-1).text, /closer to the Hippie Dips stall/);
+  assert.equal(crew.quest.stage, "go");
+
+  // Arrive: now it wants you to talk to the vendor. Standing there isn't enough.
+  w.at("A", front); w.tick();
+  assert.equal(crew.quest.stage, "talk");
+  for (let i = 0; i < 200; i++) w.tick();
+  assert.ok(crew.quest, "no talk, no finish");
+
+  w.qs.drainEvents();
+  w.qs.vendorTalk("A", w.pos);
+  const said = w.events("A", "sponsorTalk")[0];
+  assert.equal(said.sponsor, "Hippie Dips");
+  assert.equal(said.line, q.vendorLine);
+  assert.equal(crew.quest.stage, "task");
+
+  // Step away mid-task: the hold resets.
+  for (let i = 0; i < 40; i++) w.tick();
+  w.at("A", { x: front.x + 30, z: front.z }); w.tick();
+  assert.equal(crew.quest.hold, 0);
+  // Stay the full time: done, badge earned.
+  w.at("A", front);
+  for (let i = 0; i < q.task.holdSeconds * 20 + 2; i++) w.tick();
+  assert.equal(crew.quest, null);
+  assert.ok(w.qs.players.get("A").badges.has(q.badge));
+  assert.ok(w.events("A", "questDone").some((e) => e.success && e.questId === "getweird"));
+});
+
+test("business quests have a time limit, and wait politely if the sponsor's stall isn't on the map", () => {
+  const w = world();
+  const g = giverById("sunny");
+  w.at("A", near(g));
+  w.qs.startQuest("A", "sunny", w.pos, 0);
+  const crew = w.qs.crews.get(w.qs.players.get("A").crewId);
+  for (let i = 0; i < (QUESTS.getweird.timeLimit + 1) * 20; i++) w.tick();
+  assert.equal(crew.quest, null);
+  assert.match(w.events("A", "questDone").at(-1).text, /Time's up/);
+  assert.ok(!w.qs.players.get("A").badges.has(QUESTS.getweird.badge));
+
+  // The organizer took the Hippie Dips stall off the map: the quest can't be started.
+  try {
+    applyLayout({ items: defaultLayout().items.filter((i) => i.vendor !== "hippiedips") });
+    w.qs.talk("A", "sunny", near(g));
+    assert.match(w.events("A", "offer")[0].blocked, /isn't set up/);
+    w.qs.startQuest("A", "sunny", w.pos, w.now());
+    assert.match(w.events("A", "toast").at(-1).text, /isn't set up/);
+    assert.equal(w.qs.players.get("A").crewId, "", "no orphan crew left behind");
+  } finally { applyLayout(defaultLayout()); }
+});
