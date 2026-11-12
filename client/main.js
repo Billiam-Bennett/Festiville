@@ -15,6 +15,8 @@ import { normalizeRecipe, partById, bodyById } from "../shared/parts.js";
 import { createLookBuilder, createPreview } from "./look-builder.js";
 import { setupCamps } from "./camps.js";
 import { setupShop } from "./shop-ui.js";
+import { setupDj } from "./dj-ui.js";
+import { setupRides } from "./rides-ui.js";
 import { UNLOCK_PRICES } from "../shared/economy.js";
 import { createCameraRig } from "./camera.js";
 import { applyLayout } from "../shared/venue.js";
@@ -43,10 +45,11 @@ renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 400);
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1000);   // far enough to see the whole (bigger) festival from the Ferris wheel
 camera.position.set(0, 30, 60);
 camera.lookAt(0, 0, 0);
-const { stalls } = buildFestival(THREE, scene);
+const festival = buildFestival(THREE, scene);   // { stalls, stageSigns, wheel, update }
+const { stalls } = festival;
 const rig = createCameraRig(THREE, camera, renderer.domElement, scene);
 
 addEventListener("resize", () => {
@@ -242,6 +245,8 @@ let chat = null;
 let moderation = null;
 let camps = null;
 let shop = null;
+let dj = null;      // stage music and the 🎧 panel (client/dj-ui.js)
+let rides = null;   // Ferris wheel, golf cart, shuttle (client/rides-ui.js)
 let removedText = "";   // why staff removed you, if they did
 // Add ?debug to the URL to poke at the game from the browser console (window.__gs).
 if (params.has("debug")) window.__gs = { THREE, scene, camera, get mp() { return mp; } };
@@ -363,6 +368,8 @@ $("join-form").addEventListener("submit", async (e) => {
     setupReports({ mp, quests, isStaff: moderation.isStaff });
     camps = setupCamps({ THREE, scene, mp });
     shop = setupShop({ mp, toast: quests.toast, account, camps, me: () => mp.room.state.players.get(mp.room.sessionId) });
+    dj = setupDj({ mp, me: () => mp.room.state.players.get(mp.room.sessionId), toast: quests.toast, account, festival });
+    rides = setupRides({ THREE, scene, mp, rig, festival, getInput: controls.getInput, toast: quests.toast, camps, hasCart: shop.hasCart });
     emotes?.dispose();
     emotes = setupEmotes({ mp, button: $("dance") });
     const gotRecipe = mp.room.state.players.get(mp.room.sessionId)?.recipe ?? "";
@@ -439,6 +446,8 @@ renderer.setAnimationLoop(() => {
 
   if (mp && me) {
     mp.update(dt);
+    rides?.update(dt);   // right after movement: riders sit in their gondolas, drivers in their carts; turns the wheel
+    dj?.update(dt);
     quests?.update(dt);
     venue?.update(dt);
     chat?.update(dt);
@@ -457,6 +466,7 @@ renderer.setAnimationLoop(() => {
     camera.position.set(Math.sin(t) * 4.2, 1.9, Math.cos(t) * 4.2);
     camera.lookAt(Math.cos(t) * shift, wide ? 1.05 : 0.15, -Math.sin(t) * shift);
     preview?.userData.animate?.(dt, 0, "dance");
+    festival.update(clock.elapsedTime);   // the Ferris wheel turns behind the join screen too
   }
   renderer.render(scene, camera);
 });

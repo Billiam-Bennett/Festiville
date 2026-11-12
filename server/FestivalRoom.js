@@ -3,15 +3,19 @@
 import { Room, ServerError, ErrorCode } from "colyseus";
 import { FestivalState, Player, Crew } from "./schema.js";
 import { QuestSystem } from "./quests.js";
-import { resolveAppearance } from "./entitlements.js";
+import { resolveAppearance, isPremiumMember, ownedCampItems, hasGolfCart } from "./entitlements.js";
 import { vendorStore } from "./vendors.js";
 import { ChatSystem } from "./chat.js";
 import { accountStore } from "./accounts.js";
 import { layoutStore } from "./layout.js";
 import { moderationStore, ACTIONS, REASONS, untilText } from "./moderation.js";
 import { buy, rewardQuest } from "./shop.js";
-import { campStore, upgradeCost } from "./camps.js";
-import { plotById } from "../shared/economy.js";
+import { campStore, claimCamp, upgradeCamp } from "./camps.js";
+import { campSolids } from "../shared/camps.js";
+import { RideSystem } from "./rides.js";
+import { wheelOf, onWheel } from "../shared/rides.js";
+import { djStore } from "./dj.js";
+import { LAYOUT, stages } from "../shared/venue.js";
 
 // Which room/connection each signed-in account is using, across all rooms in this server process.
 // Signing in somewhere new closes the older connection (close code 4100) instead of letting one
@@ -38,7 +42,7 @@ export function takeTickStats() {
   serverStats.ticks = 0; serverStats.tickMsTotal = 0; serverStats.tickMsMax = 0;
   return out;
 }
-import { TICK_RATE, sanitizeInput, applyInput, randomSpawn } from "../shared/sim.js";
+import { TICK_RATE, sanitizeInput, applyInput, randomSpawn, separatePlayers, setSolids } from "../shared/sim.js";
 import { newEmoteState, startEmote, updateEmote } from "../shared/emotes.js";
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const cleanColor = (c, fallback) => (typeof c === "string" && HEX.test(c) ? c : fallback);
@@ -55,6 +59,8 @@ export class FestivalRoom extends Room {
     this.accountOf = new Map();   // sessionId -> account id
     this.recentChat = new Map();  // sessionId -> that player's last few chat lines (evidence for reports)
     this.emotes = new Map();      // sessionId -> emote state (shared/emotes.js); emote + emoteSeq are copied into the schema
+    this.rides = new RideSystem();   // who's on the Ferris wheel or driving a golf cart (server/rides.js)
+    this.djKey = "";              // what's playing on each stage, to notice when a set starts or ends
     this.sinceBanCheck = 0;
     this.elapsed = 0;          // seconds since the room opened (NOT this.clock: Colyseus uses that name)
 
@@ -63,9 +69,16 @@ export class FestivalRoom extends Room {
     this.onMessage("invite", (client, targetId) => this.quests.invite(client.sessionId, str(targetId), this.elapsed));
     this.onMessage("inviteReply", (client, accept) => this.quests.respond(client.sessionId, accept === true, this.elapsed));
     this.onMessage("leaveCrew", (client) => this.quests.leaveCrew(client.sessionId));
-    this.onMessage("talk", (client, giverId) => this.quests.talk(client.sessionId, str(giverId), this.state.players.get(client.sessionId)));
-    this.onMessage("startQuest", (client, giverId) => this.quests.startQuest(client.sessionId, str(giverId), this.positions(), this.elapsed));
+    // You can't talk to a quest giver or start a quest from a Ferris wheel gondola.
+    const grounded = (client) => {
+      if (!this.rides.onWheel(client.sessionId)) return true;
+      client.send("toast", { text: "Get off the Ferris wheel first.", error: true });
+      return false;
+    };
+    this.onMessage("talk", (client, giverId) => grounded(client) && this.quests.talk(client.sessionId, str(giverId), this.state.players.get(client.sessionId)));
+    this.onMessage("startQuest", (client, giverId) => grounded(client) && this.quests.startQuest(client.sessionId, str(giverId), this.positions(), this.elapsed));
     this.onMessage("abandonQuest", (client) => this.quests.abandon(client.sessionId));
+    this.onMessage("questTalk", (client) => this.quests.vendorTalk(client.sessionId, this.positions()));   // business quests: talk to the vendor at the stall
 
     // Clients send input ~20x/sec. We keep only the latest one per player,
     // so spamming messages can't make anyone move faster.
@@ -79,6 +92,7 @@ export class FestivalRoom extends Room {
     // Emotes (shared/emotes.js): "dance", "wave", "jump", … to start one, "" to stop. Moving ends most of
     // them, one-shots end on their own, and the server tells everyone (emote + emoteSeq in the schema).
     this.onMessage("emote", (client, name) => {
+      if (this.rides.onWheel(client.sessionId)) return;   // no dancing in a gondola
       const input = this.inputs.get(client.sessionId);
       const moving = !!input && (input.x !== 0 || input.z !== 0);
       if (startEmote(this.emoteState(client.sessionId), name, { now: this.elapsed, moving })) this.syncEmote(client.sessionId);
@@ -99,7 +113,7 @@ export class FestivalRoom extends Room {
     this.onMessage("buy", (client, id) => {
       const account = this.account(client.sessionId);
       if (!account) return;
-      const out = buy(accountStore(), account.id, typeof id === "string" ? id.slice(0, 40) : "");
+      const out = buy(accountStore(), account.id, typeof id === "string" ? id.slice(0, 40) : "", { premium: isPremiumMember(account) });
       client.send("toast", { text: out.error ?? out.text, error: !!out.error });
       this.sendWallet(client);
     });
@@ -107,7 +121,60 @@ export class FestivalRoom extends Room {
     // Your camp in the Campground: claim a spot where you stand, upgrade, move, set up items, release.
     this.onMessage("camp", (client, raw) => this.handleCamp(client, raw && typeof raw === "object" ? raw : {}));
     this.onMessage("camps", (client) => client.send("camps", campStore().all()));
-    this.stopCampUpdates = campStore().onChange((camp, id) => this.broadcast("camp", { id, camp }));
+    // What's set up in a camp is solid (shared/sim.js), so keep the collision world in step with the camps.
+    // A parked golf cart is solid too, except while its owner is out driving it.
+    this.solidCamps = () => {
+      const driving = new Set([...this.rides.carts].map((id) => this.state.players.get(id)?.name.toLowerCase()));
+      setSolids("camps", campStore().all().flatMap((c) => campSolids(c, { cart: !!c.cart && !driving.has(c.id) })));
+    };
+    this.solidCamps();
+    this.stopCampUpdates = campStore().onChange((camp, id) => { this.solidCamps(); this.broadcast("camp", { id, camp }); });
+
+    // Rides (server/rides.js). The Ferris wheel: { action: "board" | "off" }. The golf cart: true to drive, false to park.
+    this.onMessage("ride", (client, raw) => {
+      const id = client.sessionId, p = this.state.players.get(id);
+      if (!p) return;
+      const wheel = wheelOf(LAYOUT.items);
+      if (raw?.action === "board") {
+        this.rides.board(id, p, this.elapsed, wheel);
+        if (this.rides.onWheel(id) && startEmote(this.emoteState(id), "", { now: this.elapsed, moving: false })) this.syncEmote(id);
+      } else if (raw?.action === "off") {
+        const at = this.rides.off(id, this.elapsed, wheel);
+        if (at) { p.x = at.x; p.z = at.z; }
+      }
+      this.syncRide(id);
+      this.solidCamps();   // getting on the wheel parks your cart back at your camp
+      this.sendRideEvents();
+    });
+    // The shuttle: { to: stop id }. Free; not during a timed quest (shared/rides.js → SHUTTLE).
+    this.onMessage("shuttle", (client, raw) => {
+      const id = client.sessionId, p = this.state.players.get(id);
+      if (!p) return;
+      const crew = this.quests.crews.get(this.quests.players.get(id)?.crewId);
+      const at = this.rides.shuttle(id, p, typeof raw?.to === "string" ? raw.to.slice(0, 40) : "", LAYOUT.items, { busy: !!crew?.quest?.endsAt });
+      if (at) {
+        p.x = at.x; p.z = at.z;
+        if (startEmote(this.emoteState(id), "", { now: this.elapsed, moving: true })) this.syncEmote(id);
+      }
+      this.sendRideEvents();
+    });
+    this.onMessage("cart", (client, on) => {
+      const a = this.account(client.sessionId);
+      if (!a) return;
+      this.rides.cart(client.sessionId, on === true, { owns: hasGolfCart(a), hasCamp: !!campStore().of(a.id) });
+      this.syncRide(client.sessionId);
+      this.solidCamps();
+      this.sendRideEvents();
+    });
+
+    // DJ sets on the stages (server/dj.js): the stages with what's playing, DJ signup, linking a mix,
+    // ending your own set, and staff tools (stop a set, remove / restore / approve a DJ, put a waiting mix on).
+    this.onMessage("dj", (client) => this.sendDj(client));
+    this.onMessage("djSignup", (client, raw) => this.handleDj(client, "signup", raw));
+    this.onMessage("djLink", (client, raw) => this.handleDj(client, "link", raw));
+    this.onMessage("djEnd", (client, raw) => this.handleDj(client, "end", raw));
+    this.onMessage("djMod", (client, raw) => this.handleDjMod(client, raw ?? {}));
+    this.stopDjUpdates = djStore().onChange(() => this.broadcastDj());
 
     // Chat: the server decides who hears it (nearby players, or your crew) and enforces rate limits.
     this.onMessage("chat", (client, raw) => {
@@ -164,9 +231,21 @@ export class FestivalRoom extends Room {
     this.state.players.forEach((player, sessionId) => {
       const input = this.inputs.get(sessionId);
       if (!input) return;
-      applyInput(player, input, dt);
+      if (!onWheel(player.ride)) applyInput(player, input, dt);   // collision is inside applyInput (shared/sim.js)
       player.lastSeq = input.seq;
     });
+    // Ferris wheel: riders go where their gondola goes, and are set down when the turn is over.
+    if (this.rides.wheel.size) {
+      for (const r of this.rides.tick(this.elapsed, wheelOf(LAYOUT.items))) {
+        const p = this.state.players.get(r.id);
+        if (!p) continue;
+        if (r.x !== undefined) { p.x = r.x; p.z = r.z; }
+        if (r.off) this.syncRide(r.id);
+      }
+      this.sendRideEvents();
+    }
+    // Players standing inside each other drift apart (a soft push; nobody gets trapped).
+    separatePlayers(this.state.players.values(), dt);
     // One-shot emotes end on time; walking off ends a dance (or stands you up).
     for (const [id, st] of this.emotes) {
       const input = this.inputs.get(id);
@@ -218,6 +297,65 @@ export class FestivalRoom extends Room {
     }
   }
 
+  // ---------- Rides ----------
+  syncRide(sessionId) {
+    const p = this.state.players.get(sessionId);
+    const ride = this.rides.rideOf(sessionId);
+    if (p && p.ride !== ride) p.ride = ride;
+  }
+  sendRideEvents() {
+    for (const { to, type, ...msg } of this.rides.drainEvents()) this.clients.find((c) => c.sessionId === to)?.send(type, msg);
+  }
+
+  // ---------- DJ sets ----------
+  // The stages as the layout has them now: id, name and genre are all layout data.
+  djStages() { return stages().map((s) => ({ id: s.id, label: s.label, genre: s.genre ?? "" })); }
+  // Everyone gets the stages and what's playing; you also get your own DJ side; staff get the staff view.
+  sendDj(client) {
+    const a = this.account(client.sessionId);
+    const staff = accountStore().isStaff(a);
+    client.send("dj", { ...djStore().public(this.djStages()), me: a ? djStore().mine(a.id, { staff }) : null, staff: staff ? djStore().staffView() : null });
+  }
+  broadcastDj() {
+    this.djKey = djStore().playingKey(this.djStages());
+    for (const c of this.clients) this.sendDj(c);
+  }
+  handleDj(client, what, raw) {
+    const a = this.account(client.sessionId);
+    if (!a || !raw || typeof raw !== "object") return;
+    const who = { id: a.id, name: a.username };
+    const out = what === "signup" ? djStore().signup(who, raw)
+      : what === "link" ? djStore().link(who, raw, { stages: this.djStages(), staff: accountStore().isStaff(a) })
+      : djStore().end(who, typeof raw.set === "string" ? raw.set : "");
+    const text = out.error ?? out.text ?? (what === "signup"
+      ? (out.approved ? "You're signed up as a DJ. Link a mix to a stage to play." : "You're signed up! Festival staff approve DJs before they go on; you'll be able to link a mix once you're approved.")
+      : "Your set is over. Thanks for playing!");
+    client.send("toast", { text, error: !!out.error });
+    if (what === "link" && out.ok) console.log(`[dj] ${a.username} linked ${out.set.url} to ${out.set.stage} (${out.set.status})`);
+    if (out.error) this.sendDj(client);   // nothing changed, but put their form back in step
+  }
+  handleDjMod(client, { action, target, reason }) {
+    const me = this.account(client.sessionId);
+    if (!accountStore().isStaff(me)) return client.send("toast", { text: "Only festival staff can do that.", error: true });
+    if (typeof target !== "string") return;
+    const dj = djStore();
+    const why = typeof reason === "string" ? reason : "";
+    const tell = (accountId, text) => online.get(accountId)?.send("toast", { text, error: true });
+    let out, done = "";
+    if (action === "stop") {
+      out = dj.stop(target, me.username, why);
+      if (out.ok) { done = `Stopped ${out.set.djName}'s set.`; tell(out.set.dj, "Festival staff stopped your set."); }
+    } else if (action === "remove") {
+      out = dj.removeDj(target, me.username, why);
+      if (out.ok) { done = "DJ removed. Their sets were stopped and they can't link mixes."; tell(target, "Festival staff removed you as a DJ."); }
+    } else if (action === "restore") { out = dj.restoreDj(target, me.username); done = "DJ restored."; }
+    else if (action === "approve") { out = dj.approveDj(target, me.username); done = "DJ approved. They can link mixes now."; if (out.ok) online.get(target)?.send("toast", { text: "You're approved as a DJ! Link a mix to a stage from 🎧." }); }
+    else if (action === "approveSet") { out = dj.approveSet(target, me.username); done = "That mix is on."; }
+    else return;
+    client.send("toast", { text: out.error ?? done, error: !!out.error });
+    if (out.ok) console.log(`[staff] ${me.username}: dj ${action} ${target}${why ? ` (${why})` : ""}`);
+  }
+
   // Put a resolved appearance on a player (only changed fields are synced) and save it as their default.
   applyAppearance(p, account, { look, recipe, accessories }) {
     if (p.look !== look) p.look = look;
@@ -234,39 +372,26 @@ export class FestivalRoom extends Room {
     const a = this.account(client.sessionId);
     if (!a) return;
     const store = accountStore();
-    client.send("wallet", { credits: store.balance(a), unlocks: [...a.unlocks], campItems: store.campItems(a), camp: campStore().public(a.id) });
+    campStore().setCart(a.id, hasGolfCart(a));   // their cart is shown parked at their camp
+    client.send("wallet", { credits: store.balance(a), unlocks: [...a.unlocks], campItems: ownedCampItems(store, a), premium: isPremiumMember(a), cart: hasGolfCart(a), camp: campStore().public(a.id) });
   }
 
-  handleCamp(client, { action, plot, items }) {
+  // The camp rule itself (free 10×10, credit 10×20, premium 20×20 + bundle) is in server/camps.js.
+  handleCamp(client, { action, plot, items, color }) {
     const a = this.account(client.sessionId);
     const p = this.state.players.get(client.sessionId);
     if (!a || !p) return;
     const store = accountStore(), camps = campStore();
     const say = (text, error = false) => client.send("toast", { text, error });
     const mine = camps.of(a.id);
-    const owned = store.campItems(a);
+    const premium = isPremiumMember(a);
+    const owned = ownedCampItems(store, a);
     if (action === "claim") {
-      if (mine) return say("You already have a camp. Use Move or Upgrade instead.", true);
-      const size = plotById(plot);
-      if (!size) return say("Pick a spot size.", true);
-      const why = camps.check(a.id, p.x, p.z, size.id);
-      if (why) return say(why, true);
-      const paid = store.changeCredits(a.id, -size.price, `camp:${size.id}`);
-      if (paid.error) return say(paid.error, true);
-      const out = camps.place(a.id, a.username, { x: p.x, z: p.z, plot: size.id, items: ["tent_basic"] }, owned);
-      if (out.error) { store.changeCredits(a.id, size.price, `refund:camp:${size.id}`); return say(out.error, true); }
-      say(`Your ${size.name} is yours! Set up your camp from the Camp tab.`);
+      const out = claimCamp(store, camps, a, { x: p.x, z: p.z, plot }, { premium, owned });
+      say(out.error ?? out.text, !!out.error);
     } else if (action === "upgrade") {
-      if (!mine) return say("Claim a camp spot first.", true);
-      const cost = upgradeCost(mine.plot, plot);
-      if (cost == null) return say("Pick a bigger spot size.", true);
-      const why = camps.check(a.id, mine.x, mine.z, plot);
-      if (why) return say(`There isn't room to grow here (${why}) Move somewhere roomier first.`, true);
-      const paid = store.changeCredits(a.id, -cost, `camp:upgrade:${plot}`);
-      if (paid.error) return say(paid.error, true);
-      const out = camps.place(a.id, a.username, { x: mine.x, z: mine.z, plot, items: mine.items }, owned);
-      if (out.error) { store.changeCredits(a.id, cost, `refund:camp:upgrade:${plot}`); return say(out.error, true); }
-      say(`Upgraded to a ${plotById(plot).name}!`);
+      const out = upgradeCamp(store, camps, a, plot, { premium, owned });
+      say(out.error ?? out.text, !!out.error);
     } else if (action === "move") {
       if (!mine) return say("Claim a camp spot first.", true);
       const out = camps.place(a.id, a.username, { x: p.x, z: p.z, plot: mine.plot, items: mine.items }, owned);
@@ -275,9 +400,12 @@ export class FestivalRoom extends Room {
     } else if (action === "setup") {
       const out = camps.setItems(a.id, items, owned);
       if (out.error) return say(out.error, true);
+    } else if (action === "led") {
+      const out = camps.setLed(a.id, color);
+      if (out.error) return say(out.error, true);
     } else if (action === "release") {
       if (!camps.release(a.id)) return say("You don't have a camp.", true);
-      say("You packed up and gave back your spot.");
+      say("You packed up and gave back your spot. You can claim a free one again any time.");
     }
     this.sendWallet(client);
   }
@@ -407,6 +535,8 @@ export class FestivalRoom extends Room {
     accountStore().refresh();
     layoutStore().refresh();      // picks up `npm run layout -- restore` while running
     campStore().refresh();        // picks up `npm run account -- camp-release` while running
+    djStore().refresh();          // picks up `npm run account -- dj-…` while running
+    if (djStore().playingKey(this.djStages()) !== this.djKey) this.broadcastDj();   // a set started or ran out
     if (moderationStore().open().length !== lastStaffCount) notifyStaffCount();   // e.g. `npm run account -- close-report`
     this.state.players.forEach((p, sessionId) => {
       const a = this.account(sessionId);
@@ -456,6 +586,7 @@ export class FestivalRoom extends Room {
     this.stopVendorUpdates?.();
     this.stopLayoutUpdates?.();
     this.stopCampUpdates?.();
+    this.stopDjUpdates?.();
   }
 
   onLeave(client) {
@@ -465,6 +596,9 @@ export class FestivalRoom extends Room {
     this.inputs.delete(client.sessionId);
     this.emotes.delete(client.sessionId);
     this.quests.leave(client.sessionId);
+    const wasDriving = this.rides.carts.has(client.sessionId);
+    this.rides.leave(client.sessionId);
+    if (wasDriving) this.solidCamps();   // their cart is back at their camp
     this.chat.leave(client.sessionId);
     this.recentChat.delete(client.sessionId);
     const accountId = this.accountOf.get(client.sessionId);
