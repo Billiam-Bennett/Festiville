@@ -2,7 +2,7 @@
 // It reads and writes the same layout the game uses (shared/layout.js), through the server's
 // /api/layout (organizers only). Publishing tells everyone in the game to refresh.
 import * as THREE from "three";
-import { TYPES, FENCE, GATE, sanitizeLayout, defaultLayout, facing, rad } from "../shared/layout.js";
+import { TYPES, FENCE, GATE, GENRES, ART, sanitizeLayout, defaultLayout, facing, rad } from "../shared/layout.js";
 import { CATALOG, applyLayout, LAYOUT, VENDORS } from "../shared/venue.js";
 import { GIVERS, AMBIENT } from "../shared/quests-data.js";
 import { drawMap, fitCanvas } from "./map.js";
@@ -107,19 +107,25 @@ function newItem(type, x, z) {
     case "tent": return { ...base, color: "#f2994a", orders: false };
     case "npc": { const free = Object.keys(PEOPLE).find((r) => !layout.items.some((i) => i.type === "npc" && i.ref === r)) || REQUIRED[0]; return { ...base, ref: free }; }
     case "spot": return { ...base, where: "somewhere on the grounds" };
+    case "path": return { ...base, w: 40, d: 6 };
+    case "water": return { ...base, w: 60, d: 14, label: "Lake" };
+    case "bridge": return { ...base, w: 22, d: 6 };
+    case "forest": return { ...base, w: 30, d: 30 };
+    case "wheel": return { ...base, label: "Ferris Wheel" };
+    case "art": return { ...base, variant: "totem", label: "" };
     default: return base;
   }
 }
 
 // ---------- 2D map + editing ----------
 const cv = $("map2d");
-let view = { cx: 0, cz: 0, scale: 3.4 };
+let view = { cx: 0, cz: 0, scale: 2 };     // px per meter: about the whole (bigger) festival on a laptop screen
 let mode = "2d";
 
 function draw() {
   const { ctx, w, h } = fitCanvas(cv);
   const scale = view.scale;
-  drawMap(ctx, { cx: view.cx, cz: view.cz, scale, w, h, labels: scale >= 2.6, trees: true }, { players: [] }, layout, VENDORS);
+  drawMap(ctx, { cx: view.cx, cz: view.cz, scale, w, h, labels: scale >= 1.6, trees: true }, { players: [] }, layout, VENDORS);
   // Outline the selected item.
   const it = selected && itemById(selected);
   if (it) {
@@ -177,7 +183,7 @@ cv.addEventListener("pointermove", (e) => {
 const endDrag = () => { if (drag && drag.moved) commit(); drag = null; };
 cv.addEventListener("pointerup", endDrag);
 cv.addEventListener("pointercancel", endDrag);
-cv.addEventListener("wheel", (e) => { e.preventDefault(); const f = e.deltaY < 0 ? 1.12 : 1 / 1.12; view.scale = Math.min(14, Math.max(1.4, view.scale * f)); draw(); }, { passive: false });
+cv.addEventListener("wheel", (e) => { e.preventDefault(); const f = e.deltaY < 0 ? 1.12 : 1 / 1.12; view.scale = Math.min(14, Math.max(0.8, view.scale * f)); draw(); }, { passive: false });
 
 const clampF = (v) => Math.min(FENCE - 1, Math.max(-(FENCE - 1), v));
 const round1 = (v) => Math.round(v * 10) / 10;
@@ -197,14 +203,16 @@ function syncProps() {
 
   if (it.type === "stall") { f.push(...stallFields(it, { sel, col, txt })); }
   else for (const field of t.fields) {
-    if (field === "variant") f.push(sel("variant", "Kind of stage", [["main", "Main stage (big)"], ["side", "Side stage (small)"]]));
+    if (field === "variant" && it.type === "art") f.push(sel("variant", "What it is", Object.entries(ART).map(([v, a]) => [v, a.name])));
+    else if (field === "variant") f.push(sel("variant", "Kind of stage", [["main", "Main stage (big)"], ["side", "Side stage (small)"]]));
+    else if (field === "genre") f.push(sel("genre", "Genre (DJs' mixes have to match it)", [["", "Open stage: any genre"], ...GENRES.map((g) => [g.id, g.name])]));
     else if (field === "ref") f.push(sel("ref", "Character", Object.entries(PEOPLE)));
     else if (field === "color") f.push(col("color", "Color"));
     else if (field === "label") f.push(txt("label", "Label on the map"));
     else if (field === "text") f.push(txt("text", "Sign text"));
     else if (field === "where") f.push(txt("where", "Hint (\"beside the main stage\")"));
-    else if (field === "w") f.push(num("w", "Width (m)", 2, 198, 1));
-    else if (field === "d") f.push(num("d", "Depth (m)", 2, 198, 1));
+    else if (field === "w") f.push(num("w", it.type === "path" || it.type === "bridge" ? "Length (m)" : "Width (m)", 2, FENCE * 2, 1));
+    else if (field === "d") f.push(num("d", it.type === "path" || it.type === "bridge" ? "Width (m)" : "Depth (m)", 2, FENCE * 2, 1));
     else if (field === "r") f.push(num("r", "Radius (m)", 5, 90, 1));
     else if (field === "orders") f.push(check("orders", "Takes taco orders (Vendor Rush)"));
   }
@@ -330,7 +338,7 @@ function ensure3d() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   $("view3d").appendChild(renderer.domElement);
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(60, 1, 0.1, 600);
+  camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1400);
   let d = null;
   const el = renderer.domElement;
   el.addEventListener("pointerdown", (e) => { d = { x: e.clientX, y: e.clientY, ...look, pan: e.button === 2 || e.shiftKey }; el.setPointerCapture(e.pointerId); });
@@ -341,7 +349,7 @@ function ensure3d() {
   });
   el.addEventListener("pointerup", () => (d = null));
   el.addEventListener("contextmenu", (e) => e.preventDefault());
-  el.addEventListener("wheel", (e) => { e.preventDefault(); look.dist = Math.min(260, Math.max(18, look.dist * (e.deltaY < 0 ? 0.9 : 1.1))); }, { passive: false });
+  el.addEventListener("wheel", (e) => { e.preventDefault(); look.dist = Math.min(520, Math.max(18, look.dist * (e.deltaY < 0 ? 0.9 : 1.1))); }, { passive: false });
 }
 function rebuild3d() {
   ensure3d();

@@ -9,6 +9,7 @@
 // and they override what's here. Stall positions come from the layout.
 import { FENCE, GATE, defaultLayout, facing, rad, TYPES } from "./layout.js";
 import { GIVERS, AMBIENT, QUESTS, LOST_SPOTS, CAMP_TENTS } from "./quests-data.js";
+import { setLayoutSolids } from "./sim.js";
 export { FENCE, GATE };
 
 // kind: "food" shows a menu; "goods" shows what they sell. Prices are in dollars.
@@ -131,6 +132,7 @@ export function inside(item, x, z, [w, d] = TYPES[item.type].size(item)) {
 export function applyLayout(layout) {
   const items = Array.isArray(layout?.items) ? layout.items : defaultLayout().items;
   LAYOUT.items = items;
+  setLayoutSolids(items);   // stages, stalls, tents, trees, water… are solid from here on (shared/sim.js)
   const replace = (arr, next) => { arr.length = 0; arr.push(...next); };
 
   // Zones: named ground areas. A stall belongs to the named area it stands in.
@@ -143,7 +145,8 @@ export function applyLayout(layout) {
     // A catalog vendor brings its full listing; a new vendor uses the starting listing typed in the
     // builder (name/tagline/menu on the stall itself), which the vendor can later edit with their link.
     const base = CATALOG[i.vendor] ?? { id: i.vendor, name: i.vendor, kind: i.style === "tent" ? "goods" : "food", color: "#ff4fa3", tagline: i.tagline ?? "", items: i.items ?? [], next: [] };
-    const zone = areas.find((a) => inside(a, i.x, i.z))?.id ?? "grounds";
+    // The smallest named area it stands in: "Food Court", not the whole section around it.
+    const zone = areas.filter((a) => inside(a, i.x, i.z)).sort((a, b) => a.w * a.d - b.w * b.d)[0]?.id ?? "grounds";
     return {
       ...base, id: i.vendor, name: i.name || base.name, kind: i.kind || base.kind, color: i.color || base.color,
       tagline: i.tagline ?? base.tagline, items: i.items ?? base.items,
@@ -171,6 +174,10 @@ export function applyLayout(layout) {
   }
   return LAYOUT;
 }
+
+// Stages, with where they are and what they play (the genre is layout data; see GENRES in layout.js).
+export const stages = () => LAYOUT.items.filter((i) => i.type === "stage");
+export const stageById = (id) => stages().find((s) => s.id === id) ?? null;
 
 export const vendorById = (id) => VENDORS.find((v) => v.id === id) ?? null;
 // Where to stand to browse a stall: a few steps in front of its counter.
