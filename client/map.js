@@ -98,26 +98,46 @@ export function drawMap(ctx, view, data, layout = LAYOUT, vendors = VENDORS) {
   // Other players, then you on top.
   for (const p of data.players ?? []) dot(ctx, X(p.x), Z(p.z), p.crew ? 3.5 : 2.5, p.crew ? C.crew : C.player);
 
-  // Labels (full map only).
+  // Labels (full map only). Placed most important first; a label that would land on one already
+  // placed tries a few spots just above or below its own, and is left off if there's no room (zoom
+  // in and it comes back). Each label is one or more lines: [text, size, color].
   if (view.labels) {
-    const label = (text, x, z, size = 13, color = C.label, align = "center") => {
-      ctx.font = `700 ${size}px system-ui, sans-serif`;
-      ctx.textAlign = align; ctx.textBaseline = "middle";
-      ctx.lineWidth = 3; ctx.strokeStyle = "rgba(20,12,32,.85)"; ctx.strokeText(text, X(x), Z(z));
-      ctx.fillStyle = color; ctx.fillText(text, X(x), Z(z));
+    const placed = [];
+    const hits = (r) => placed.some((q) => r.x0 < q.x1 && r.x1 > q.x0 && r.y0 < q.y1 && r.y1 > q.y0);
+    const place = (lines, x, z, align = "center", must = false) => {
+      const sizes = lines.map(([text, size]) => { ctx.font = `700 ${size}px system-ui, sans-serif`; return [ctx.measureText(text).width, size * 1.2]; });
+      const w = Math.max(...sizes.map((q) => q[0])) + 4, h = sizes.reduce((a, q) => a + q[1], 0);
+      const px = X(x), pz = Z(z);
+      const x0 = align === "right" ? px - w : align === "left" ? px : px - w / 2;
+      for (const dy of [0, h * 0.75, -h * 0.75, h * 1.5, -h * 1.5]) {
+        const r = { x0, x1: x0 + w, y0: pz - h / 2 + dy, y1: pz + h / 2 + dy };
+        if (hits(r) && !(must && dy === -h * 1.5)) continue;
+        placed.push(r);
+        let y = r.y0;
+        for (let i = 0; i < lines.length; i++) {
+          const [text, size, color = C.label] = lines[i];
+          y += sizes[i][1] / 2;
+          ctx.font = `700 ${size}px system-ui, sans-serif`;
+          ctx.textAlign = align; ctx.textBaseline = "middle";
+          ctx.lineWidth = 3; ctx.strokeStyle = "rgba(20,12,32,.85)"; ctx.strokeText(text, px, y);
+          ctx.fillStyle = color; ctx.fillText(text, px, y);
+          y += sizes[i][1] / 2;
+        }
+        return;
+      }
     };
     const big = Math.min(16, Math.max(11, scale * 3.2));
     // Stages with their genre, so players can find the music they like.
-    for (const st of items.filter((i) => i.type === "stage")) { label(st.label, st.x, st.z - (big * 0.6) / scale, big); label(`♪ ${genreName(st.genre)}`, st.x, st.z + (big * 0.6) / scale, big * 0.8, "#ffd36b"); }
-    for (const w of items.filter((i) => i.type === "wheel")) label(`🎡 ${w.label || "Ferris Wheel"}`, w.x, w.z + Math.max(6, 18 / scale), big * 0.85, C.wheel);
-    for (const w of items.filter((i) => i.type === "water" && i.label)) label(w.label, w.x + Math.min(w.w * 0.3, 60), w.z, big * 0.75, "#bfe3ff");
-    for (const st of items.filter((i) => i.type === "stop")) label(`🚌 ${st.label}`, st.x, st.z - 3.2, 11, "#ffd36b");
-    for (const a of items.filter((i) => i.type === "art" && i.label)) label(a.label, a.x, a.z - 3.6, 11, "#fff");
-    for (const a of items.filter((i) => i.type === "area" && i.label)) label(a.label, a.x, a.z - Math.min(a.d, a.w) / 2 + 3, big, "#ffe7c2");
-    label(GATE.label, GATE.x, GATE.z - 4, big * 0.85);
+    for (const st of items.filter((i) => i.type === "stage")) place([[st.label, big], [`♪ ${genreName(st.genre)}`, big * 0.8, "#ffd36b"]], st.x, st.z, "center", true);
+    place([[GATE.label, big * 0.85]], GATE.x, GATE.z - 4, "center", true);
+    for (const w of items.filter((i) => i.type === "wheel")) place([[`🎡 ${w.label || "Ferris Wheel"}`, big * 0.85, C.wheel]], w.x, w.z + Math.max(6, 18 / scale), "center", true);
+    for (const a of items.filter((i) => i.type === "area" && i.label)) place([[a.label, big, "#ffe7c2"]], a.x, a.z - Math.min(a.d, a.w) / 2 + 3);
+    for (const w of items.filter((i) => i.type === "water" && i.label)) place([[w.label, big * 0.75, "#bfe3ff"]], w.x + Math.min(w.w * 0.3, 60), w.z);
+    for (const st of items.filter((i) => i.type === "stop")) place([[`🚌 ${st.label}`, 11, "#ffd36b"]], st.x, st.z - 3.2);
+    for (const a of items.filter((i) => i.type === "art" && i.label)) place([[a.label, 11, "#fff"]], a.x, a.z - 3.6);
     // Stall names once there's room for them, on the side away from the counter.
-    if (scale >= 5) for (const v of vendors) label(v.name, v.x - v.facing.x * 4.6, v.z - v.facing.z * 4.4, 11, C.label, v.facing.x > 0.5 ? "right" : v.facing.x < -0.5 ? "left" : "center");
-    if (scale >= 3.2) for (const g of GIVERS) label(g.name, g.x, g.z - 2.6, 11, C.giver);
+    if (scale >= 5) for (const v of vendors) place([[v.name, 11]], v.x - v.facing.x * 4.6, v.z - v.facing.z * 4.4, v.facing.x > 0.5 ? "right" : v.facing.x < -0.5 ? "left" : "center");
+    if (scale >= 3.2) for (const g of GIVERS) place([[g.name, 11, C.giver]], g.x, g.z - 2.6);
   }
 
   // Waypoint: a ringed marker, or an arrow on the rim of the minimap when it's out of view.
