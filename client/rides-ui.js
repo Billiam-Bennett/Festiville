@@ -8,8 +8,12 @@ import { setSolids } from "../shared/sim.js";
 import { LAYOUT } from "../shared/venue.js";
 import { CABIN_FLOOR } from "./world.js";
 
-// Where up to four riders stand in a cabin (meters, in the wheel's own frame).
-const SEATS = [[-0.4, 0.35], [0.4, 0.35], [-0.4, -0.35], [0.4, -0.35]];
+// Where up to four riders sit in a cabin (meters, in the wheel's own frame): two on the back bench
+// facing out over the festival, two on the front bench facing them. [x, z, turn]
+const SEATS = [[-0.4, -0.55, 0], [0.4, -0.55, 0], [-0.4, 0.55, Math.PI], [0.4, 0.55, Math.PI]];
+const CABIN_SEAT = { hipY: 0.5 };                 // hips just above the bench (world.js: CABIN_BENCH)
+const CART_SEAT = { hipY: 1.0, hands: "wheel" };  // on the cart's seat cushion, hands on the wheel
+const CART_OFFSET = 0.1;                          // the cart sits this far ahead of its driver's hips (sim.js WATER_REACH.cart)
 
 export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, camps, hasCart }) {
   const room = mp.room, myId = room.sessionId;
@@ -58,7 +62,7 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
     look.pitch = Math.max(-1.1, Math.min(0.35, look.pitch - (input.z ?? 0) * 0.9 * dt));
     const obj = mp.avatarOf(myId);
     if (!obj) return;
-    eye.set(obj.position.x, obj.position.y + 1.65, obj.position.z);
+    eye.set(obj.position.x, obj.position.y + 1.25, obj.position.z);   // seated eye height
     at.set(eye.x + Math.sin(look.yaw) * Math.cos(look.pitch), eye.y + Math.sin(look.pitch), eye.z + Math.cos(look.yaw) * Math.cos(look.pitch));
     camera.position.lerp(eye, 1 - Math.exp(-10 * dt));
     camera.lookAt(at);
@@ -75,6 +79,10 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
     add(new THREE.BoxGeometry(1.3, 0.45, 2.3), mat(color), 0, 0.5, 0);
     add(new THREE.BoxGeometry(1.32, 0.08, 2.32), gold, 0, 0.74, 0);                       // gold trim: it's premium
     add(new THREE.BoxGeometry(1.2, 0.5, 0.15), mat("#2a1b3d"), 0, 0.98, -0.45);            // seat back
+    add(new THREE.BoxGeometry(1.15, 0.14, 0.5), mat("#2a1b3d"), 0, 0.85, -0.15);           // seat cushion
+    add(new THREE.CylinderGeometry(0.035, 0.035, 0.7, 6), mat("#333"), 0, 1.0, 0.45).rotation.x = -0.6;   // steering column
+    const wheel = add(new THREE.TorusGeometry(0.17, 0.025, 6, 18), mat("#222"), 0, 1.27, 0.3);
+    wheel.rotation.x = -Math.PI / 2 + 0.6;
     add(new THREE.BoxGeometry(1.25, 0.06, 1.7), mat(color), 0, 2.05, -0.05);               // roof
     for (const [x, z] of [[-0.6, 0.75], [0.6, 0.75], [-0.6, -0.85], [0.6, -0.85]]) add(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 6), mat("#ccc"), x, 1.4, z);
     add(new THREE.PlaneGeometry(1.15, 0.7), mat("#bfe3ff", { transparent: true, opacity: 0.35, side: THREE.DoubleSide }), 0, 1.45, 0.78).rotation.x = -0.2;
@@ -100,17 +108,17 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
       if (cur?.obj === obj) return;
       cur?.cart.parent?.remove(cur.cart);
       const cart = cartMesh();
-      cart.position.set(0, -0.35, 0.25);   // the avatar sits on the seat, the cart sits on the ground
+      cart.position.set(0, 0, CART_OFFSET);   // the cart sits on the ground; the driver sits in it
       obj.add(cart);
+      obj.userData.seat = CART_SEAT;
       driving.set(id, { obj, cart });
     });
     for (const [id, d] of driving) {
       if (drivers.has(id)) continue;
       d.cart.parent?.remove(d.cart);
-      d.obj.position.y = 0;
+      d.obj.userData.seat = null;
       driving.delete(id);
     }
-    for (const { obj } of driving.values()) obj.position.y = 0.35;
 
     // Parked carts (and what's solid in camps, so walking predicts the same as the server).
     const names = new Set([...drivers].map((id) => players().get(id)?.name?.toLowerCase()));
@@ -155,12 +163,16 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
         if (!obj) continue;
         const n = rideGondola(players().get(id).ride), k = seat.get(n) ?? 0;
         seat.set(n, k + 1);
-        const g = gondolaPos(wheel, n, t), [ox, oz] = SEATS[k % SEATS.length];
+        const g = gondolaPos(wheel, n, t), [ox, oz, turn] = SEATS[k % SEATS.length];
         obj.position.set(g.x + ox * cos + oz * sin, g.y - CABIN_FLOOR, g.z - ox * sin + oz * cos);
-        obj.rotation.y = r;
+        obj.rotation.y = r + turn;
+        obj.userData.seat = CABIN_SEAT;
       }
     }
-    for (const id of wasRiding) if (!riders.includes(id)) { const obj = mp.avatarOf(id); if (obj) obj.position.y = 0; }
+    for (const id of wasRiding) if (!riders.includes(id)) {
+      const obj = mp.avatarOf(id);
+      if (obj) { obj.position.y = 0; obj.userData.seat = null; }
+    }
     wasRiding.clear();
     for (const id of riders) wasRiding.add(id);
 
@@ -174,6 +186,10 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
         rig.setView(wheelView);
       } else rig.setView(null);
     }
+    // In the cabin the camera is at your own eye height, so hide your own character (everyone else
+    // still sees you sitting there).
+    const mine = mp.avatarOf(myId);
+    if (mine) mine.visible = !riding;
     $("ride-card").hidden = !riding;
     if (riding) {
       const low = fromBottom(rideGondola(p.ride), t) <= WHEEL.offArc;

@@ -131,8 +131,54 @@ export function rigAvatar(THREE, model, clips, profile = {}, height = TARGET_HEI
     return null;
   }
 
+  // ---------- Sitting on a ride (golf cart, Ferris wheel) ----------
+  // Rides set root.userData.seat = { hipY, hands } (or null to stand). The character plays Idle and we
+  // bend it into a seated pose on top: thighs forward, shins down, hips lowered onto the seat, and with
+  // hands: "wheel" the arms reach for a steering wheel. Bones are aimed in world space, so this works
+  // on any Mixamo rig (classic characters and build-your-own) without needing a sitting animation.
+  root.userData.seat = null;
+  const shadow = root.children.find((c) => c.userData.contactShadow);
+  const seatBones = ["Hips", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot",
+    "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand"];
+  const canSit = ["Hips", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot"].every((k) => bones[k]);
+  const S = { a: new THREE.Vector3(), b: new THREE.Vector3(), v: new THREE.Vector3(), d: new THREE.Vector3(),
+    fwd: new THREE.Vector3(), left: new THREE.Vector3(), down: new THREE.Vector3(0, -1, 0), up: new THREE.Vector3(0, 1, 0),
+    q: new THREE.Quaternion(), qw: new THREE.Quaternion(), qp: new THREE.Quaternion() };
+  // Turn `bone` (in world space, the shortest way) so the line from it to `child` points along `dir`.
+  function aim(bone, child, dir) {
+    bone.getWorldPosition(S.a); child.getWorldPosition(S.b);
+    S.v.subVectors(S.b, S.a);
+    if (S.v.lengthSq() < 1e-8) return;
+    S.q.setFromUnitVectors(S.v.normalize(), dir);
+    bone.getWorldQuaternion(S.qw);
+    bone.parent.getWorldQuaternion(S.qp);
+    bone.quaternion.copy(S.qp.invert().multiply(S.q.multiply(S.qw)));
+    bone.updateMatrixWorld(true);
+  }
+  const mix = (out, ...terms) => { out.set(0, 0, 0); for (let i = 0; i < terms.length; i += 2) out.addScaledVector(terms[i], terms[i + 1]); return out.normalize(); };
+  function sitPose(seat) {
+    S.fwd.set(0, 0, 1).applyQuaternion(root.getWorldQuaternion(S.qw)).setY(0).normalize();   // characters face +z
+    S.left.crossVectors(S.up, S.fwd);
+    for (const [side, s] of [["Left", 1], ["Right", -1]]) {
+      aim(bones[`${side}UpLeg`], bones[`${side}Leg`], mix(S.d, S.fwd, 1, S.left, 0.1 * s, S.down, 0.12));   // thigh: forward
+      aim(bones[`${side}Leg`], bones[`${side}Foot`], mix(S.d, S.down, 1, S.fwd, 0.18));                       // shin: down
+      if (seat.hands === "wheel" && bones[`${side}Arm`] && bones[`${side}ForeArm`] && bones[`${side}Hand`]) {
+        aim(bones[`${side}Arm`], bones[`${side}ForeArm`], mix(S.d, S.fwd, 0.55, S.down, 0.75, S.left, 0.08 * s));
+        aim(bones[`${side}ForeArm`], bones[`${side}Hand`], mix(S.d, S.fwd, 1, S.down, 0.05, S.left, -0.28 * s));
+      }
+    }
+    // Lower (or raise) the whole body so the hips rest on the seat.
+    bones.Hips.getWorldPosition(S.a);
+    root.getWorldPosition(S.b);
+    model.position.y += S.b.y + seat.hipY - S.a.y;   // root is never scaled, so world meters = root meters
+    model.updateMatrixWorld(true);
+  }
+
   // Called every frame by multiplayer.js with the character's measured speed (m/s) and its emote.
   root.userData.animate = (dt, speed, emote = "", emoteSeq = 0) => {
+    const seat = canSit ? root.userData.seat : null;
+    if (seat) { speed = 0; emote = ""; }   // riding: no walk cycle, no emotes
+    if (shadow) shadow.visible = !root.userData.seat;
     smoothSpeed += (speed - smoothSpeed) * Math.min(1, dt * 10);
     playing.t += dt;
     const moving = smoothSpeed >= 0.35;
@@ -158,6 +204,7 @@ export function rigAvatar(THREE, model, clips, profile = {}, height = TARGET_HEI
     model.position.y = baseY + hop;
     mixer.update(dt);
     model.updateMatrixWorld();
+    if (seat) sitPose(seat);
     placeAccessories(dt);
   };
   root.userData.dispose = () => mixer.stopAllAction();
@@ -204,5 +251,6 @@ function contactShadow(THREE) {
   );
   m.rotation.x = -Math.PI / 2;
   m.position.y = 0.015;
+  m.userData.contactShadow = true;
   return m;
 }

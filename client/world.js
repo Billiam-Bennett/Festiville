@@ -404,7 +404,8 @@ function forest(THREE, it, items) {
 // gondola in the same place, and riders (client/rides-ui.js) sit in the cabin their server ride says.
 // Local frame: the wheel turns in the x/y plane; its axle runs along z; the boarding side is +z.
 const CABIN_COLORS = ["#ff4fa3", "#4fc3ff", "#ffd36b", "#7ee081", "#b44fff", "#ff7a3d"];
-export const CABIN_FLOOR = 1.8;   // how far below the rim point a cabin's floor is (riders stand there)
+export const CABIN_FLOOR = 1.8;   // how far below the rim point a cabin's floor is
+const CABIN_BENCH = 0.42;         // bench height above the cabin floor
 function ferrisWheel(THREE, it) {
   const g = new THREE.Group();
   const R = WHEEL.radius, H = WHEEL.hub;
@@ -464,6 +465,11 @@ function ferrisWheel(THREE, it) {
     const tub = box(THREE, 1.7, 0.6, 1.7, color);
     tub.position.y = -CABIN_FLOOR + 0.3;
     c.add(hanger, roof, tub);
+    for (const z of [-0.62, 0.62]) {   // two benches facing each other (riders sit on them: rides-ui.js SEATS)
+      const bench = box(THREE, 1.5, CABIN_BENCH, 0.36, "#3b2f4a");
+      bench.position.set(0, -CABIN_FLOOR + CABIN_BENCH / 2, z);
+      c.add(bench);
+    }
     for (const [px, pz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) {
       const post = box(THREE, 0.06, 1.0, 0.06, "#ddd");
       post.position.set(px, -1.2 + 0.0, pz);
