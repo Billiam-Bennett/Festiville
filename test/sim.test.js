@@ -124,6 +124,18 @@ test("the river can only be crossed on a bridge", () => withLayout(() => {
   assert.ok(rail.x <= item("bridge_main").d / 2 && !inWater(rail.x, rail.z));
 }));
 
+test("a golf cart stops with its whole body on the bank, and still fits over the narrow footbridges", () => withLayout(() => {
+  const river = item("river");
+  const bank = river.z - river.d / 2;
+  const cart = walk({ x: 50, z: 80, rotY: 0, ride: "cart" }, 0, 1, 10);
+  assert.ok(cart.z + 1.25 <= bank, `the cart's nose stays out of the water, z=${cart.z}`);   // 1.25: rides-ui.js cart length
+  for (const id of ["bridge_west", "bridge_east"]) {
+    const b = item(id);
+    const over = walk({ x: b.x, z: 80, rotY: 0, ride: "cart" }, 0, 1, 6);
+    assert.ok(over.z > river.z + river.d / 2 + 3, `drove over ${id}, z=${over.z}`);
+  }
+}));
+
 test("you still can't leave the grounds, even running into a corner full of trees", () => withLayout(() => {
   const p = walk({ x: FENCE - 12, z: -(FENCE - 12), rotY: 0 }, 1, -1, 10);
   assert.ok(p.x <= WALK_LIMIT && p.z >= -WALK_LIMIT);

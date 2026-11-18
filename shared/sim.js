@@ -142,20 +142,30 @@ export function blockedAt(x, z, r = PLAYER_RADIUS) {
   return Math.abs(p.x - x) > 1e-6 || Math.abs(p.z - z) > 1e-6;
 }
 
+/** Would something reaching `reach` meters around (x, z) get wet? (Checks its edges, not just its middle.) */
+export function wetAt(x, z, reach = 0) {
+  if (inWater(x, z)) return true;
+  return reach > 0 && (inWater(x + reach, z) || inWater(x - reach, z) || inWater(x, z + reach) || inWater(x, z - reach));
+}
+
+// How far from its middle a rider reaches over the water: a golf cart is about 2.3 m long.
+export const WATER_REACH = { walk: PLAYER_RADIUS * 0.5, cart: 1.3 };
+
 // One step from `from` toward (x, z): stay inside the fence, don't enter water (slide along the
 // bank instead), then slide around anything solid.
 const TRY = { x: 0, z: 0 };
-function step(from, x, z, r) {
+function step(from, x, z, r, reach = 0) {
   x = clamp(x, -WALK_LIMIT, WALK_LIMIT); z = clamp(z, -WALK_LIMIT, WALK_LIMIT);
-  if (world.water.length && inWater(x, z) && !inWater(from.x, from.z)) {
-    if (!inWater(x, from.z)) z = from.z;
-    else if (!inWater(from.x, z)) x = from.x;
+  const wet = (a, b) => wetAt(a, b, reach);
+  if (world.water.length && wet(x, z) && !wet(from.x, from.z)) {
+    if (!wet(x, from.z)) z = from.z;
+    else if (!wet(from.x, z)) x = from.x;
     else { x = from.x; z = from.z; }
   }
   TRY.x = x; TRY.z = z;
   resolveSolids(TRY, r);
   // Being pushed out of a wall must not push you into the river.
-  if (world.water.length && inWater(TRY.x, TRY.z) && !inWater(from.x, from.z)) { TRY.x = from.x; TRY.z = from.z; }
+  if (world.water.length && wet(TRY.x, TRY.z) && !wet(from.x, from.z)) { TRY.x = from.x; TRY.z = from.z; }
   return TRY;
 }
 
@@ -167,7 +177,8 @@ export function applyInput(player, input, dt) {
   const cart = player.ride === "cart";
   const speed = cart ? CART_SPEED : input.run ? RUN_SPEED : WALK_SPEED;
   if (input.x !== 0 || input.z !== 0) {
-    const to = step(player, player.x + input.x * speed * dt, player.z + input.z * speed * dt, cart ? CART_RADIUS : PLAYER_RADIUS);
+    const to = step(player, player.x + input.x * speed * dt, player.z + input.z * speed * dt,
+      cart ? CART_RADIUS : PLAYER_RADIUS, cart ? WATER_REACH.cart : WATER_REACH.walk);
     player.x = to.x; player.z = to.z;
     player.rotY = Math.atan2(input.x, input.z);   // face the direction of travel
   }
