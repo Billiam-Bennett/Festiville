@@ -4,7 +4,7 @@
 // linking to their page; the signs over the stages; the 🎧 panel for DJs (sign up, link a mix, end
 // your set) and for staff (stop a set, approve / remove DJs, put waiting mixes on, the record).
 // The server decides everything (server/dj.js); this shows it and asks.
-import { DJ_TERMS, GENRES, genreById, loudest, PROVIDERS } from "../shared/dj.js";
+import { DJ_TERMS, DJ_LIMITS, GENRES, genreById, loudest, PROVIDERS, soundcloudPlayerTarget } from "../shared/dj.js";
 import { genreName } from "../shared/layout.js";
 import { LAYOUT } from "../shared/venue.js";
 
@@ -41,7 +41,8 @@ function makePlayer(host, set, offsetSec) {
     return f;
   };
   if (set.provider === "soundcloud") {
-    const f = frame(`https://w.soundcloud.com/player/?url=${encodeURIComponent(set.url)}&auto_play=true&visual=false&show_comments=false&hide_related=true&show_teaser=false`, 116);
+    const sc = soundcloudPlayerTarget(set);   // private tracks: their number plus the secret token
+    const f = frame(`https://w.soundcloud.com/player/?url=${encodeURIComponent(sc.url)}${sc.secret ? `&secret_token=${encodeURIComponent(sc.secret)}` : ""}&auto_play=true&visual=false&show_comments=false&hide_related=true&show_teaser=false`, 116);
     loadScript("https://w.soundcloud.com/player/api.js").then(() => {
       if (p.dead) return;
       const w = window.SC.Widget(f);
@@ -281,7 +282,8 @@ export function setupDj({ mp, me, toast, account, festival }) {
     stage.onchange = syncGenre; syncGenre();
     keep("link", "stage", stage); keep("link", "genre", genre);
     const title = keep("link", "title", el("input", { type: "text", maxLength: 60, placeholder: "Sunset set, live from my bedroom" }));
-    const url = keep("link", "url", el("input", { type: "url", maxLength: 200, placeholder: "https://soundcloud.com/you/your-mix" }));
+    // Text, not url: SoundCloud's Embed code (for private tracks) can be pasted here too.
+    const url = keep("link", "url", el("input", { type: "text", maxLength: DJ_LIMITS.embed, placeholder: "https://soundcloud.com/you/your-mix", autocomplete: "off", spellcheck: false }));
     const when = keep("link", "when", el("input", { type: "datetime-local" }));
     const go = el("button", { type: "button", textContent: data.rules.order === "organizer" ? "Send it to staff" : "Put it on" });
     go.onclick = () => room.send("djLink", { stage: stage.value, genre: genre.value, title: title.value, url: url.value, startsAt: when.value ? new Date(when.value).getTime() + offset : 0 });   // your clock → the server's
@@ -289,6 +291,7 @@ export function setupDj({ mp, me, toast, account, festival }) {
       h("Link a mix"),
       field("Stage", stage), field("Genre of your mix (it has to match the stage)", genre),
       field("Title", title), field("Link (SoundCloud, Mixcloud or YouTube)", url),
+      small("Private SoundCloud track? Its secret link (ending in /s-…) works, or paste its code from Share → Embed."),
       data.rules.order === "schedule" ? field("Start time", when) : "",
       small("Only your own music or your own mixes. Staff can stop a set at any time, and every link is kept on record with your account."),
       go,

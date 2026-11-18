@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSyn
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { cleanRules, cleanDjName, cleanTitle, cleanPageLink, parseMixLink, genreById, DJ_LIMITS, PROVIDERS } from "../shared/dj.js";
+import { cleanRules, cleanDjName, cleanTitle, cleanPageLink, parseMixLink, parseSoundcloudEmbed, genreById, DJ_LIMITS, PROVIDERS } from "../shared/dj.js";
 import { genreName } from "../shared/layout.js";
 
 const DEFAULT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "data");
@@ -127,7 +127,7 @@ export class DjStore {
   }
 
   // Link a mix to a stage. stages: [{ id, label, genre }] from the layout. Returns { ok, set, text } or { error }.
-  link(account, { stage: stageId, title, url, genre, startsAt } = {}, { stages = [], staff = false } = {}) {
+  link(account, { stage: stageId, title, url, genre, startsAt } = {}, { stages = [], staff = false, resolved = null } = {}) {
     this.refresh();
     const now = this.now();
     const why = account?.id ? this.whyNot(account.id, { staff }) : "Sign in first.";
@@ -136,6 +136,11 @@ export class DjStore {
     if (!stage) return { error: "Pick a stage." };
     const mix = parseMixLink(url);
     if (mix.error) return mix;
+    // A private SoundCloud link needs its player address (looked up by FestivalRoom first).
+    if (mix.secret && !mix.id) {
+      if (!resolved?.id) return { error: PRIVATE_SC_HELP };
+      mix.id = resolved.id;
+    }
     const name = cleanTitle(title);
     if (name.length < 2) return { error: "Give your mix a title." };
     // A stage plays one genre; the mix has to match it. (A stage with no genre takes anything.)
@@ -152,7 +157,7 @@ export class DjStore {
     const d = this.djs[account.id];
     const set = {
       id: "s_" + randomBytes(5).toString("hex"), stage: stage.id, dj: account.id, djName: d.name,
-      title: name, url: mix.url, provider: mix.provider, ...(mix.id ? { mixId: mix.id } : {}), genre,
+      title: name, url: mix.url, provider: mix.provider, ...(mix.id ? { mixId: mix.id } : {}), ...(mix.secret ? { secret: mix.secret } : {}), genre,
       startsAt: 0, endsAt: 0, status: "booked", at: new Date(now).toISOString(),
     };
     let text;
@@ -267,7 +272,7 @@ export class DjStore {
   // ---------- What goes to the browser ----------
   publicSet(s) {
     const d = this.djs[s.dj];
-    return { id: s.id, title: s.title, url: s.url, provider: s.provider, ...(s.mixId ? { mixId: s.mixId } : {}), genre: s.genre, startsAt: s.startsAt, endsAt: s.endsAt, dj: { name: s.djName, link: d?.link ?? "" } };
+    return { id: s.id, title: s.title, url: s.url, provider: s.provider, ...(s.mixId ? { mixId: s.mixId } : {}), ...(s.secret ? { secret: s.secret } : {}), genre: s.genre, startsAt: s.startsAt, endsAt: s.endsAt, dj: { name: s.djName, link: d?.link ?? "" } };
   }
   // Everyone: each stage with its genre, what's playing and what's next. `now` lets browsers line up their clocks.
   public(stages = [], now = this.now()) {
@@ -307,6 +312,24 @@ export class DjStore {
 }
 
 export const providerName = (p) => PROVIDERS[p] ?? p;
+
+// ---------- Private SoundCloud tracks ----------
+export const PRIVATE_SC_HELP = "SoundCloud didn't give us a player for that private link. On your track, open Share → Embed, copy the code, and paste that here instead.";
+
+/**
+ * Look up the player address for a SoundCloud link (works for private /s-… links) with SoundCloud's
+ * oEmbed service, the same thing that makes their Embed code. Returns { id, secret? } or null.
+ * fetchImpl is for tests.
+ */
+export async function resolveSoundcloud(link, fetchImpl = globalThis.fetch) {
+  try {
+    const res = await fetchImpl(`https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(link)}`, { signal: AbortSignal.timeout(6000) });
+    if (!res.ok) return null;
+    const html = (await res.json())?.html;
+    const mix = parseSoundcloudEmbed(typeof html === "string" ? html : "");
+    return mix ? { id: mix.id, ...(mix.secret ? { secret: mix.secret } : {}) } : null;
+  } catch { return null; }
+}
 
 let shared = null;
 export const djStore = () => (shared ??= new DjStore());

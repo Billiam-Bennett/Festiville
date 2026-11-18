@@ -14,7 +14,8 @@ import { campStore, claimCamp, upgradeCamp } from "./camps.js";
 import { campSolids } from "../shared/camps.js";
 import { RideSystem } from "./rides.js";
 import { wheelOf, onWheel } from "../shared/rides.js";
-import { djStore } from "./dj.js";
+import { djStore, resolveSoundcloud } from "./dj.js";
+import { parseMixLink } from "../shared/dj.js";
 import { LAYOUT, stages } from "../shared/venue.js";
 
 // Which room/connection each signed-in account is using, across all rooms in this server process.
@@ -320,12 +321,19 @@ export class FestivalRoom extends Room {
     this.djKey = djStore().playingKey(this.djStages());
     for (const c of this.clients) this.sendDj(c);
   }
-  handleDj(client, what, raw) {
+  async handleDj(client, what, raw) {
     const a = this.account(client.sessionId);
     if (!a || !raw || typeof raw !== "object") return;
     const who = { id: a.id, name: a.username };
+    // A private SoundCloud link: ask SoundCloud for its player address first.
+    let resolved = null;
+    if (what === "link") {
+      const mix = parseMixLink(raw.url);
+      if (mix.secret && !mix.id) resolved = await resolveSoundcloud(mix.url);
+      if (!this.account(client.sessionId)) return;   // left while we waited
+    }
     const out = what === "signup" ? djStore().signup(who, raw)
-      : what === "link" ? djStore().link(who, raw, { stages: this.djStages(), staff: accountStore().isStaff(a) })
+      : what === "link" ? djStore().link(who, raw, { stages: this.djStages(), staff: accountStore().isStaff(a), resolved })
       : djStore().end(who, typeof raw.set === "string" ? raw.set : "");
     const text = out.error ?? out.text ?? (what === "signup"
       ? (out.approved ? "You're signed up as a DJ. Link a mix to a stage to play." : "You're signed up! Festival staff approve DJs before they go on; you'll be able to link a mix once you're approved.")

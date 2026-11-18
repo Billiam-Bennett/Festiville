@@ -18,7 +18,7 @@ export { GENRES, genreById };
 //   setMinutes  how long a set lasts (0 = until the DJ or staff end it; only with "first-come" on a free stage)
 export const DJ_RULE_DEFAULTS = { signup: "approved", order: "first-come", setMinutes: 60 };
 export const DJ_RULE_CHOICES = { signup: ["approved", "open"], order: ["first-come", "schedule", "organizer"] };
-export const DJ_LIMITS = { name: 24, title: 60, link: 200, reason: 200, maxSetMinutes: 240, scheduleDays: 14, queuePerStage: 12 };
+export const DJ_LIMITS = { name: 24, title: 60, link: 200, embed: 2000, reason: 200, maxSetMinutes: 240, scheduleDays: 14, queuePerStage: 12 };
 
 // Shown on the DJ signup, and the DJ has to tick it.
 export const DJ_TERMS = "Only link music that is your own: your own tracks, or mixes you made and have the right to share. "
@@ -51,8 +51,42 @@ export function cleanPageLink(v) {
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 export const PROVIDERS = { soundcloud: "SoundCloud", mixcloud: "Mixcloud", youtube: "YouTube" };
 
+// A SoundCloud private ("secret") link ends in a token: soundcloud.com/you/your-mix/s-AbC123.
+const SC_SECRET = /^s-[A-Za-z0-9]{3,40}$/;
+// What SoundCloud's own player is pointed at: a track or playlist by number (from its Embed code).
+const SC_API = /^https:\/\/api\.soundcloud\.com\/(tracks|playlists)\/(\d{1,20})$/;
+
+/**
+ * SoundCloud's Embed code (Share → Embed), or the player address inside it, as a mix:
+ * { provider, url: "https://api.soundcloud.com/tracks/123", id: <what the player plays>, secret? }.
+ * null if it isn't one. This is how private tracks are embedded, so it works for those too.
+ */
+export function parseSoundcloudEmbed(raw) {
+  if (typeof raw !== "string" || raw.length > DJ_LIMITS.embed) return null;
+  const src = (raw.match(/src\s*=\s*["']([^"']+)["']/i)?.[1] ?? raw).trim().replace(/&amp;/g, "&");
+  let u;
+  try { u = new URL(src); } catch { return null; }
+  if (u.protocol !== "https:" || u.hostname !== "w.soundcloud.com" || !u.pathname.startsWith("/player")) return null;
+  let inner;
+  try { inner = new URL(u.searchParams.get("url") ?? ""); } catch { return null; }
+  const base = `${inner.origin}${inner.pathname.replace(/\/+$/, "")}`;
+  if (!SC_API.test(base)) return null;
+  const secret = inner.searchParams.get("secret_token") ?? u.searchParams.get("secret_token") ?? "";
+  if (secret && !SC_SECRET.test(secret)) return null;
+  return { provider: "soundcloud", url: base, id: secret ? `${base}?secret_token=${secret}` : base, ...(secret ? { secret } : {}) };
+}
+
+/** The player address and secret token for a SoundCloud set (see client/dj-ui.js). */
+export function soundcloudPlayerTarget(set) {
+  const secret = set.secret ?? (String(set.mixId ?? set.url).match(/[?&/]secret_token=(s-[A-Za-z0-9]+)|\/(s-[A-Za-z0-9]+)$/)?.slice(1).find(Boolean) ?? "");
+  return { url: set.mixId ?? set.url, secret };
+}
+
 export function parseMixLink(raw) {
   if (typeof raw !== "string" || !raw.trim()) return { error: "Paste a link to your mix." };
+  const embed = parseSoundcloudEmbed(raw);
+  if (embed) return embed;
+  if (/w\.soundcloud\.com|<iframe/i.test(raw)) return { error: "That embed code isn't a SoundCloud track or playlist. Copy it again from Share → Embed on your track." };
   if (raw.length > DJ_LIMITS.link) return { error: "That link is too long." };
   let u;
   try { u = new URL(raw.trim()); } catch { return { error: "That doesn't look like a link. It should start with https://" }; }
@@ -64,7 +98,10 @@ export function parseMixLink(raw) {
 
   if (host === "soundcloud.com") {
     if (parts.length < 2 || ["discover", "search", "upload", "you", "stream"].includes(parts[0])) return { error: "Link the track or set itself (soundcloud.com/your-name/your-mix)." };
-    return { provider: "soundcloud", url: `https://soundcloud.com${path}` };
+    // A private track's secret link: the player can't take it as-is, so the server looks up the
+    // player address for it (server/dj.js resolveSoundcloud) before it goes on a stage.
+    const secret = parts.length >= 3 && SC_SECRET.test(parts[parts.length - 1]) ? parts[parts.length - 1] : "";
+    return { provider: "soundcloud", url: `https://soundcloud.com${path}`, ...(secret ? { secret } : {}) };
   }
   if (host === "on.soundcloud.com") return { error: "That's a SoundCloud short link. Open it and copy the full link from the address bar." };
   if (host === "mixcloud.com") {

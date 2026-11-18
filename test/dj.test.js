@@ -243,3 +243,56 @@ test("rules are cleaned: unknown values fall back, and a fresh server starts fro
   assert.deepEqual(cleanRules({ signup: "everyone", order: "chaos", setMinutes: -5 }), DJ_RULE_DEFAULTS);
   assert.deepEqual(cleanRules({ signup: "open", order: "schedule", setMinutes: 9999 }), { signup: "open", order: "schedule", setMinutes: 240 });
 });
+
+// ---------- Private SoundCloud tracks ----------
+import { parseSoundcloudEmbed, soundcloudPlayerTarget } from "../shared/dj.js";
+import { resolveSoundcloud, PRIVATE_SC_HELP } from "../server/dj.js";
+
+const SECRET_LINK = "https://soundcloud.com/muse-djs/test-pressing-no-1/s-AbC123xyz";
+const EMBED = `<iframe width="100%" height="166" scrolling="no" frameborder="no" allow="autoplay" src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/1234567890%3Fsecret_token%3Ds-AbC123xyz&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true"></iframe><div style="font-size: 10px;">…</div>`;
+const API_ID = "https://api.soundcloud.com/tracks/1234567890?secret_token=s-AbC123xyz";
+
+test("private SoundCloud: the secret link, and SoundCloud's own Embed code, are both understood", () => {
+  assert.deepEqual(parseMixLink(SECRET_LINK + "?si=x&utm_source=clipboard"), { provider: "soundcloud", url: SECRET_LINK, secret: "s-AbC123xyz" });
+  assert.deepEqual(parseMixLink(EMBED), { provider: "soundcloud", url: "https://api.soundcloud.com/tracks/1234567890", id: API_ID, secret: "s-AbC123xyz" });
+  // Just the player address works too, and so does a public track's embed (no token).
+  assert.equal(parseMixLink("https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/42&secret_token=s-Zz9").id, "https://api.soundcloud.com/tracks/42?secret_token=s-Zz9");
+  assert.deepEqual(parseSoundcloudEmbed('<iframe src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/playlists/77"></iframe>'),
+    { provider: "soundcloud", url: "https://api.soundcloud.com/playlists/77", id: "https://api.soundcloud.com/playlists/77" });
+  // Anything that isn't SoundCloud's player pointed at a SoundCloud track is still refused.
+  for (const bad of [
+    '<iframe src="https://evil.example/player/?url=https%3A//api.soundcloud.com/tracks/1"></iframe>',
+    '<iframe src="https://w.soundcloud.com/player/?url=https%3A//evil.example/tracks/1"></iframe>',
+    "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/users/5",
+    "https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/1&secret_token=%22%3E%3Cscript",
+    "<iframe src=\"https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/1\"></iframe>" + "x".repeat(2100),
+  ]) assert.ok(parseMixLink(bad).error, `rejected: ${bad.slice(0, 80)}`);
+});
+
+test("private SoundCloud: the player gets the track number and the secret token", () => {
+  assert.deepEqual(soundcloudPlayerTarget({ url: "https://api.soundcloud.com/tracks/1234567890", mixId: API_ID, secret: "s-AbC123xyz" }), { url: API_ID, secret: "s-AbC123xyz" });
+  assert.deepEqual(soundcloudPlayerTarget({ url: MIX }), { url: MIX, secret: "" });   // public tracks: unchanged
+});
+
+test("private SoundCloud: the server looks up the player for a secret link, and asks for the Embed code if it can't", async () => {
+  const asked = [];
+  const ok = async (u) => { asked.push(u); return { ok: true, json: async () => ({ html: EMBED }) }; };
+  assert.deepEqual(await resolveSoundcloud(SECRET_LINK, ok), { id: API_ID, secret: "s-AbC123xyz" });
+  assert.match(asked[0], /^https:\/\/soundcloud\.com\/oembed\?format=json&url=https%3A%2F%2Fsoundcloud\.com%2Fmuse-djs/);
+  assert.equal(await resolveSoundcloud(SECRET_LINK, async () => ({ ok: false })), null);
+  assert.equal(await resolveSoundcloud(SECRET_LINK, async () => { throw new Error("offline"); }), null);
+  assert.equal(await resolveSoundcloud(SECRET_LINK, async () => ({ ok: true, json: async () => ({ html: "<p>nope</p>" }) })), null);
+
+  const { store, done } = temp();
+  try {
+    assert.ok(signup(store, nova).ok);
+    const req = edm({ title: "Test Pressing", url: SECRET_LINK });
+    assert.equal(store.link(nova, req, { stages: STAGES }).error, PRIVATE_SC_HELP);   // lookup failed: say how to fix it
+    const out = store.link(nova, req, { stages: STAGES, resolved: { id: API_ID } });
+    assert.ok(out.ok, out.error);
+    const playing = store.public(STAGES).stages.find((s) => s.id === MAIN.id).playing;
+    assert.equal(playing.mixId, API_ID);
+    assert.equal(playing.secret, "s-AbC123xyz");
+    assert.equal(playing.url, SECRET_LINK);   // the record of who linked what keeps the link they pasted
+  } finally { done(); }
+});
