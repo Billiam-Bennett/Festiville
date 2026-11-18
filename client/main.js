@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { buildFestival } from "./world.js";
+import { setupGraphics } from "./graphics.js";
 import { createControls } from "./controls.js";
 import { connectMultiplayer, defaultAvatar } from "./multiplayer.js";
 import { createCast } from "./cast.js";
@@ -51,11 +52,13 @@ camera.lookAt(0, 0, 0);
 const festival = buildFestival(THREE, scene);   // { stalls, stageSigns, wheel, update }
 const { stalls } = festival;
 const rig = createCameraRig(THREE, camera, renderer.domElement, scene);
+const graphics = setupGraphics(THREE, { renderer, scene, camera, festival });   // shadows + glow on computers, lighter on phones
 
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
+  graphics.resize(innerWidth, innerHeight);
 });
 
 const controls = createControls($("joystick"));
@@ -468,6 +471,7 @@ renderer.setAnimationLoop(() => {
     preview?.userData.animate?.(dt, 0, "dance");
     festival.update(clock.elapsedTime);   // the Ferris wheel turns behind the join screen too
   }
-  renderer.render(scene, camera);
+  graphics.update(dt, mp && me ? me.position : camera.position);
+  graphics.render();
 });
 

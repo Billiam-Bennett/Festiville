@@ -3,6 +3,7 @@
 // Everything is simple shapes so it loads instantly; swap in real models later.
 // What goes where comes from the layout (shared/layout.js), which the festival builder edits;
 // buildFestival() is also what the builder's 3D preview uses.
+import { glowing, groundTexture } from "./graphics.js";
 import { WORLD_HALF_SIZE } from "../shared/sim.js";
 import { FENCE, GATE, LAYOUT, VENDORS } from "../shared/venue.js";
 import { rad, forestTrees, genreName, ART } from "../shared/layout.js";
@@ -25,11 +26,11 @@ export function buildFestival(THREE, scene, layout = LAYOUT, vendors = VENDORS) 
   scene.fog = new THREE.Fog("#2a1b3d", 40, S * 1.4);
 
   root.add(new THREE.HemisphereLight("#ffd9b0", "#2a3a2a", 1.6));
-  const sun = new THREE.DirectionalLight("#ffb07a", 1.8);
+  const sun = new THREE.DirectionalLight("#ffb07a", 1.8);   // casts the shadows on high quality (client/graphics.js)
   sun.position.set(-40, 60, 30);
   root.add(sun);
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(S * 2, S * 2), new THREE.MeshStandardMaterial({ color: "#3d6b35" }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(S * 2, S * 2), new THREE.MeshStandardMaterial({ color: "#3d6b35", map: groundTexture(THREE, "grass", S * 2, S * 2) }));
   ground.rotation.x = -Math.PI / 2;
   root.add(ground);
   addFence(THREE, root);
@@ -42,7 +43,7 @@ export function buildFestival(THREE, scene, layout = LAYOUT, vendors = VENDORS) 
   // Ground areas first, bigger ones underneath smaller ones so overlaps look right.
   const areas = layout.items.filter((i) => i.type === "area").sort((a, b) => b.w * b.d - a.w * a.d);
   areas.forEach((a, k) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(a.w, a.d), new THREE.MeshStandardMaterial({ color: a.color }));
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(a.w, a.d), new THREE.MeshStandardMaterial({ color: a.color, map: groundTexture(THREE, looksGreen(a.color) ? "grass" : "dirt", a.w, a.d) }));
     m.rotation.set(-Math.PI / 2, 0, rad(a.rot));
     m.position.set(a.x, 0.01 + k * 0.002, a.z);
     root.add(m);
@@ -89,7 +90,7 @@ export function buildFestival(THREE, scene, layout = LAYOUT, vendors = VENDORS) 
   }
   scene.add(root);
   const update = (t) => { for (const f of ticks) f(t); };
-  return { group: root, stalls, stageSigns, wheel, update };
+  return { group: root, stalls, stageSigns, wheel, sun, update };
 }
 
 // Free the GPU memory of a festival built above (the builder rebuilds it on every change).
@@ -185,13 +186,13 @@ function tree(THREE, seed) {
 // A worn dirt loop with string lights hung over it.
 function pathRing(THREE, r) {
   const g = new THREE.Group();
-  const path = new THREE.Mesh(new THREE.RingGeometry(r - 3, r + 3, 64), new THREE.MeshStandardMaterial({ color: "#8a6a45" }));
+  const path = new THREE.Mesh(new THREE.RingGeometry(r - 3, r + 3, 64), new THREE.MeshStandardMaterial({ color: "#8a6a45", map: groundTexture(THREE, "dirt", (r + 3) * 2, (r + 3) * 2) }));
   path.rotation.x = -Math.PI / 2;
   path.position.y = 0.03;
   g.add(path);
   const colors = ["#ffdd57", "#ff6b9d", "#6bd5ff", "#b8ff6b"];
   const bulbGeo = new THREE.SphereGeometry(0.18, 8, 8);
-  const mats = colors.map((c) => new THREE.MeshBasicMaterial({ color: c }));
+  const mats = colors.map((c) => glowing(new THREE.MeshBasicMaterial({ color: c })));
   const n = Math.round(120 * r / 31);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
@@ -208,7 +209,7 @@ function bulbString(THREE, w, d) {
   const g = new THREE.Group();
   const colors = ["#ffdd57", "#ff6b9d", "#6bd5ff", "#b8ff6b"];
   const geo = new THREE.SphereGeometry(0.16, 6, 6);
-  const mats = colors.map((c) => new THREE.MeshBasicMaterial({ color: c }));
+  const mats = colors.map((c) => glowing(new THREE.MeshBasicMaterial({ color: c })));
   const n = Math.max(10, Math.round(w * 1.5));
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
@@ -224,7 +225,7 @@ function bulbString(THREE, w, d) {
 // A warm light hanging over an area (a glowing bulb, plus real light on the ground).
 function lamp(THREE, color) {
   const g = new THREE.Group();
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), new THREE.MeshBasicMaterial({ color }));
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), glowing(new THREE.MeshBasicMaterial({ color })));
   bulb.position.y = 6;
   const l = new THREE.PointLight(color, 16, 22);
   l.position.y = 6;
@@ -328,7 +329,7 @@ function addFence(THREE, scene) {   // scene: any group to add to
 // A flat strip of ground (a path), w long and d wide, just above the grass.
 function groundStrip(THREE, w, d, color, y) {
   const g = new THREE.Group();
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ color }));
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ color, map: groundTexture(THREE, looksGreen(color) ? "grass" : "dirt", w, d) }));
   m.rotation.x = -Math.PI / 2;
   m.position.y = y;
   g.add(m);
@@ -368,7 +369,7 @@ function bridge(THREE, it) {
     for (let i = 0; i <= n; i++) posts.setMatrixAt(k++, m.makeTranslation(-it.w / 2 + (i * it.w) / n, 0.5, z));
   }
   g.add(posts);
-  const glowMat = new THREE.MeshBasicMaterial({ color: "#ffd38a" });
+  const glowMat = glowing(new THREE.MeshBasicMaterial({ color: "#ffd38a" }));
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), glowMat);
     lantern.position.set((sx * it.w) / 2, 1.28, sz * (it.d / 2 - 0.07));
@@ -397,6 +398,14 @@ function forest(THREE, it, items) {
   });
   g.add(trunks, tops);
   return g;
+}
+
+// Is this ground color grass (green) or dirt/plaza (anything else)? Picks its texture.
+function looksGreen(hex) {
+  const n = parseInt(String(hex).replace("#", ""), 16);
+  if (Number.isNaN(n)) return false;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return g > r && g > b;
 }
 
 // ---------- The Ferris wheel ----------
@@ -441,7 +450,7 @@ function ferrisWheel(THREE, it) {
     }
   }
   const BULBS = 72;
-  const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.2, 6, 5), new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false }), BULBS);
+  const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(0.2, 6, 5), glowing(new THREE.MeshBasicMaterial({ color: "#ffffff", toneMapped: false })), BULBS);
   const mm = new THREE.Matrix4(), col = new THREE.Color();
   for (let i = 0; i < BULBS; i++) {
     const a = (i / BULBS) * Math.PI * 2;
@@ -449,7 +458,7 @@ function ferrisWheel(THREE, it) {
     bulbs.setColorAt(i, col.set(CABIN_COLORS[i % CABIN_COLORS.length]));
   }
   spin.add(bulbs);
-  const hubGlow = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.3, 20), new THREE.MeshBasicMaterial({ color: "#ff4fa3", toneMapped: false }));
+  const hubGlow = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.3, 20), glowing(new THREE.MeshBasicMaterial({ color: "#ff4fa3", toneMapped: false })));
   hubGlow.rotation.x = Math.PI / 2; hubGlow.position.z = 1.25;
   spin.add(hubGlow);
 

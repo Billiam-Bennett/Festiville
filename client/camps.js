@@ -4,11 +4,12 @@
 //
 // Each item is built from simple shapes in meters (like client/accessories.js). Where items stand
 // comes from shared/camps.js (campSlots), so a camp looks the same on every screen.
+import { glowing } from "./graphics.js";
 import { plotById, campItemById, cleanLedColor } from "../shared/economy.js";
 import { campSlots, snap } from "../shared/camps.js";
 
 const std = (THREE, color, o = {}) => new THREE.MeshStandardMaterial({ color, ...o });
-const glow = (THREE, color, k = 1) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: k });
+const glow = (THREE, color, k = 1) => glowing(new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: k }));
 
 // A color per owner, so tents and flags differ between camps.
 function ownerColor(name) {
@@ -134,7 +135,7 @@ function buildItem(THREE, id, camp, plot) {
     }
     case "neon": {
       // The owner's name in neon over the front of the camp.
-      const sign = add(new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.6, plot.w), 0.6), new THREE.MeshBasicMaterial({ map: textTexture(THREE, camp.owner, { color: "#ff6bd0" }), transparent: true, side: THREE.DoubleSide, toneMapped: false })), 0, 2.3, plot.d / 2 - 0.05);
+      const sign = add(new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.6, plot.w), 0.6), glowing(new THREE.MeshBasicMaterial({ map: textTexture(THREE, camp.owner, { color: "#ff6bd0" }), transparent: true, side: THREE.DoubleSide, toneMapped: false }))), 0, 2.3, plot.d / 2 - 0.05);
       for (const x of [-0.9, 0.9]) add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.0, 5), std(THREE, "#333")), Math.max(-plot.w / 2, Math.min(plot.w / 2, x)), 1.0, plot.d / 2 - 0.05);
       g.userData.tick = (dt, t) => { sign.material.opacity = Math.sin(t * 13) > -0.97 ? 1 : 0.4; };   // the odd flicker
       break;
