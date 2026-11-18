@@ -200,9 +200,27 @@ export function setupDj({ mp, me, toast, account, festival }) {
     r.setMinutes ? `${r.setMinutes}-minute sets` : "sets run until ended",
   ].join(" · ");
 
+  // The server sends a fresh copy of everything whenever anything changes (your own sign-up, someone
+  // else's set starting...), and the panel is rebuilt from it. So: what you've typed lives in `draft`
+  // and survives a rebuild, and while you're in a field the rebuild waits until you leave it.
+  const draft = { signup: {}, link: {} };
+  let redrawLater = false;
+  $("dj-body").addEventListener("focusout", () => setTimeout(() => {
+    if (redrawLater && !$("dj-body").contains(document.activeElement)) { redrawLater = false; renderPanel(); }
+  }, 0));
+  const keep = (form, key, input, prop = "value") => {
+    if (draft[form][key] !== undefined) input[prop] = draft[form][key];
+    input.addEventListener(prop === "checked" ? "change" : "input", () => { draft[form][key] = input[prop]; });
+    if (input.tagName === "SELECT") input.addEventListener("change", () => { draft[form][key] = input.value; });
+    return input;
+  };
+
   function renderPanel() {
     const body = $("dj-body");
+    const typing = body.contains(document.activeElement) && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
+    if (typing) { redrawLater = true; return; }
     const out = [];
+    let showsSignup = false, showsLink = false;
     // What's on now, on every stage.
     out.push(h("On the stages now"));
     for (const st of data.stages) {
@@ -217,7 +235,7 @@ export function setupDj({ mp, me, toast, account, festival }) {
     // Your DJ side.
     const mine = data.me;
     out.push(h("Play your music here"));
-    if (!mine?.dj || editing) out.push(...signupForm(mine?.dj));
+    if (!mine?.dj || editing) { out.push(...signupForm(mine?.dj)); showsSignup = true; }
     else {
       const d = mine.dj;
       out.push(el("p", {}, el("b", { textContent: d.name }), " · ", link(d.link, "your page"), el("span", { className: "small", textContent: d.removed ? " · removed by staff" : d.approved || data.rules.signup === "open" ? " · ready to play" : " · waiting for staff to approve you" }),
@@ -227,20 +245,23 @@ export function setupDj({ mp, me, toast, account, festival }) {
         out.push(el("div", { className: "shop-row" }, el("div", {}, el("b", { textContent: s.title }), el("div", { className: "small", textContent: `${data.stages.find((x) => x.id === s.stage)?.label ?? s.stage} · ${when}` })),
           el("button", { type: "button", className: "btn-sm btn-ghost", textContent: s.startsAt <= serverNow() && s.status === "booked" ? "End my set" : "Cancel", onclick: () => room.send("djEnd", { set: s.id }) })));
       }
-      if (mine.canLink && !mine.sets.length) out.push(...linkForm());
+      if (mine.canLink && !mine.sets.length) { out.push(...linkForm()); showsLink = true; }
       else if (!mine.canLink) out.push(el("p", { className: "blocked", textContent: mine.why }));
     }
     out.push(small(`How sets work right now: ${ruleText(data.rules)}.`));
 
     if (data.staff) out.push(...staffSection(data.staff));
     body.replaceChildren(...out);
+    // A form that's gone (you signed up, your mix went on) starts empty next time.
+    if (!showsSignup) draft.signup = {};
+    if (!showsLink) draft.link = {};
   }
   let editing = false;
 
   function signupForm(d) {
-    const name = el("input", { type: "text", maxLength: 24, value: d?.name ?? account?.username ?? "", autocomplete: "off" });
-    const page = el("input", { type: "url", maxLength: 200, value: d?.link ?? "", placeholder: "https://soundcloud.com/you" });
-    const own = el("input", { type: "checkbox" });
+    const name = keep("signup", "name", el("input", { type: "text", maxLength: 24, value: d?.name ?? account?.username ?? "", autocomplete: "off" }));
+    const page = keep("signup", "page", el("input", { type: "url", maxLength: 200, value: d?.link ?? "", placeholder: "https://soundcloud.com/you" }));
+    const own = keep("signup", "own", el("input", { type: "checkbox" }), "checked");
     const go = el("button", { type: "button", textContent: d ? "Save" : "Sign up as a DJ" });
     go.onclick = () => { editing = false; room.send("djSignup", { name: name.value, link: page.value, own: own.checked }); };
     return [
@@ -258,9 +279,10 @@ export function setupDj({ mp, me, toast, account, festival }) {
     for (const g of GENRES) genre.append(el("option", { value: g.id, textContent: g.name }));
     const syncGenre = () => { const g = data.stages.find((s) => s.id === stage.value)?.genre; if (genreById(g)) genre.value = g; };
     stage.onchange = syncGenre; syncGenre();
-    const title = el("input", { type: "text", maxLength: 60, placeholder: "Sunset set, live from my bedroom" });
-    const url = el("input", { type: "url", maxLength: 200, placeholder: "https://soundcloud.com/you/your-mix" });
-    const when = el("input", { type: "datetime-local" });
+    keep("link", "stage", stage); keep("link", "genre", genre);
+    const title = keep("link", "title", el("input", { type: "text", maxLength: 60, placeholder: "Sunset set, live from my bedroom" }));
+    const url = keep("link", "url", el("input", { type: "url", maxLength: 200, placeholder: "https://soundcloud.com/you/your-mix" }));
+    const when = keep("link", "when", el("input", { type: "datetime-local" }));
     const go = el("button", { type: "button", textContent: data.rules.order === "organizer" ? "Send it to staff" : "Put it on" });
     go.onclick = () => room.send("djLink", { stage: stage.value, genre: genre.value, title: title.value, url: url.value, startsAt: when.value ? new Date(when.value).getTime() + offset : 0 });   // your clock → the server's
     return [
