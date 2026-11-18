@@ -54,7 +54,7 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
   // ---------- The view from the top ----------
   // While you ride, the camera sits in your cabin and you look around with WASD / the arrows / the
   // joystick (walking does nothing up there).
-  const look = { yaw: 0, pitch: -0.25 };
+  const look = { yaw: 0, pitch: -0.08 };
   const eye = new THREE.Vector3(), at = new THREE.Vector3();
   const wheelView = (dt, camera) => {
     const input = getInput();
@@ -182,7 +182,7 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
       riding = onIt;
       if (riding && wheel) {
         look.yaw = Math.atan2(-wheel.x, -50 - wheel.z);   // start looking out over the middle of the festival
-        look.pitch = -0.25;
+        look.pitch = -0.08;   // just below the horizon: the festival, not the cabin wall
         rig.setView(wheelView);
       } else rig.setView(null);
     }
