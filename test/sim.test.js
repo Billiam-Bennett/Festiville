@@ -129,10 +129,14 @@ test("a golf cart stops with its whole body on the bank, and still fits over the
   const bank = river.z - river.d / 2;
   const cart = walk({ x: 50, z: 80, rotY: 0, ride: "cart" }, 0, 1, 10);
   assert.ok(cart.z + 1.25 <= bank, `the cart's nose stays out of the water, z=${cart.z}`);   // 1.25: rides-ui.js cart length
-  for (const id of ["bridge_west", "bridge_east"]) {
+  // Driving onto a bridge a little off its middle still works: on the 10 m main bridge up to 4 m
+  // off, on the 5 m footbridges up to 1.5 m (the cart is 1.3 m wide).
+  for (const [id, off] of [["bridge_main", 4], ["bridge_main", -4], ["bridge_west", 1.5], ["bridge_east", -1.5], ["bridge_east", 0]]) {
     const b = item(id);
-    const over = walk({ x: b.x, z: 80, rotY: 0, ride: "cart" }, 0, 1, 6);
-    assert.ok(over.z > river.z + river.d / 2 + 3, `drove over ${id}, z=${over.z}`);
+    const over = walk({ x: b.x + off, z: 80, rotY: 0, ride: "cart" }, 0, 1, 6);
+    assert.ok(over.z > river.z + river.d / 2 + 3, `drove over ${id} ${off} m off its middle, z=${over.z}`);
+    const back = walk({ x: b.x + off, z: 130, rotY: 0, ride: "cart" }, 0, -1, 6);
+    assert.ok(back.z < river.z - river.d / 2 - 3, `drove back over ${id} ${off} m off its middle, z=${back.z}`);
   }
 }));
 

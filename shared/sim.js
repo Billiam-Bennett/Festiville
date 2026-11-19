@@ -142,21 +142,30 @@ export function blockedAt(x, z, r = PLAYER_RADIUS) {
   return Math.abs(p.x - x) > 1e-6 || Math.abs(p.z - z) > 1e-6;
 }
 
-/** Would something reaching `reach` meters around (x, z) get wet? (Checks its edges, not just its middle.) */
-export function wetAt(x, z, reach = 0) {
+/**
+ * Would a rider at (x, z) get wet? Checks its edges, not just its middle: `along` meters ahead and
+ * behind in the direction it's moving (dir), `side` meters to each side. Standing still: `side` all round.
+ */
+export function wetAt(x, z, along = 0, dir = null, side = along) {
   if (inWater(x, z)) return true;
-  return reach > 0 && (inWater(x + reach, z) || inWater(x - reach, z) || inWater(x, z + reach) || inWater(x, z - reach));
+  const l = dir ? Math.hypot(dir.x, dir.z) : 0;
+  if (!l) return side > 0 && (inWater(x + side, z) || inWater(x - side, z) || inWater(x, z + side) || inWater(x, z - side));
+  const fx = dir.x / l, fz = dir.z / l;
+  return (along > 0 && (inWater(x + fx * along, z + fz * along) || inWater(x - fx * along, z - fz * along)))
+    || (side > 0 && (inWater(x - fz * side, z + fx * side) || inWater(x + fz * side, z - fx * side)));
 }
 
-// How far from its middle a rider reaches over the water: a golf cart is about 2.3 m long.
-export const WATER_REACH = { walk: PLAYER_RADIUS * 0.5, cart: 1.3 };
+// How far from its middle a rider reaches over the water. A golf cart is about 2.3 m long and
+// 1.3 m wide, so it reaches further ahead than to the sides (and still fits the 5 m footbridges).
+export const WATER_REACH = { walk: { along: PLAYER_RADIUS * 0.5, side: PLAYER_RADIUS * 0.5 }, cart: { along: 1.3, side: 0.7 } };
 
 // One step from `from` toward (x, z): stay inside the fence, don't enter water (slide along the
 // bank instead), then slide around anything solid.
 const TRY = { x: 0, z: 0 };
-function step(from, x, z, r, reach = 0) {
+function step(from, x, z, r, reach = WATER_REACH.walk) {
   x = clamp(x, -WALK_LIMIT, WALK_LIMIT); z = clamp(z, -WALK_LIMIT, WALK_LIMIT);
-  const wet = (a, b) => wetAt(a, b, reach);
+  const dir = { x: x - from.x, z: z - from.z };
+  const wet = (a, b) => wetAt(a, b, reach.along, dir, reach.side);
   if (world.water.length && wet(x, z) && !wet(from.x, from.z)) {
     if (!wet(x, from.z)) z = from.z;
     else if (!wet(from.x, z)) x = from.x;
