@@ -25,7 +25,9 @@ export const GIVERS = [
 // No dialogue or quest; they idle in place. Positions are just off the main foot-traffic paths.
 // The campers get a random parts-based look, seeded by their id so everyone sees the same one.
 export const AMBIENT = [
-  { id: "greeter",    name: "Ez",       role: "Greeter",         x: 6,   z: 176, look: "michelle" },
+  // Michelle is the first character on the picker, so most new players arrive as her: the greeter by
+  // the gate wears a built look instead, so nobody takes it for a second copy of themselves.
+  { id: "greeter",    name: "Ez",       role: "Greeter",         x: 6,   z: 176, look: "remy", recipe: randomRecipe(seededRandom("greeter")) },
   { id: "camper1",    name: "Ridley",   role: "Camper",          x: -32, z: 158, look: "remy", recipe: randomRecipe(seededRandom("camper1")) },
   { id: "camper2",    name: "Ash",      role: "Camper",          x: 32,  z: 158, look: "kate", recipe: randomRecipe(seededRandom("camper2")) },
   { id: "photog",     name: "Zoe",      role: "Photographer",    x: -6,  z: -80, look: "sophie" },
