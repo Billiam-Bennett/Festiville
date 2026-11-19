@@ -18,16 +18,17 @@ function ownerColor(name) {
   return ["#f2994a", "#2d9cdb", "#eb5757", "#27ae60", "#9b51e0", "#f2c94c", "#ff4fa3", "#4fe3ff"][h % 8];
 }
 
-function textTexture(THREE, text, { w = 512, h = 128, color = "#fff", bg = "rgba(0,0,0,0)", font = "bold 72px system-ui, sans-serif" } = {}) {
+function textTexture(THREE, text, { w = 512, h = 128, color = "#fff", bg = "rgba(0,0,0,0)", font = "bold 72px system-ui, sans-serif", glow = 18 } = {}) {
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   const x = c.getContext("2d");
   x.fillStyle = bg; x.fillRect(0, 0, w, h);
   x.font = font; x.textAlign = "center"; x.textBaseline = "middle";
-  x.shadowColor = color; x.shadowBlur = 18;
+  x.shadowColor = color; x.shadowBlur = glow;   // neon glow; 0 for plain printed text
   x.fillStyle = color; x.fillText(text, w / 2, h / 2, w - 20);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;   // stays sharp when seen at an angle from the camera
   return t;
 }
 
@@ -441,12 +442,14 @@ function buildCamp(THREE, camp) {
   root.add(pad);
   const edge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => new THREE.Vector3((x * plot.w) / 2, 0.04, (z * plot.d) / 2))), new THREE.LineBasicMaterial({ color: col }));
   root.add(edge);
-  // Owner stake at the front left.
-  const stake = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.6, 0.05), std(THREE, "#8a6a4f"));
-  stake.position.set(-plot.w / 2 + 0.1, 0.3, plot.d / 2 - 0.1);
+  // Owner stake at the front left, with a name board big enough to read from the usual camera
+  // height, tipped back a little toward it.
+  const stake = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.0, 0.06), std(THREE, "#8a6a4f"));
+  stake.position.set(-plot.w / 2 + 0.1, 0.5, plot.d / 2 - 0.1);
   root.add(stake);
-  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.25), new THREE.MeshBasicMaterial({ map: textTexture(THREE, camp.owner, { w: 256, h: 72, font: "bold 40px system-ui, sans-serif", bg: "#f4efe2", color: "#2a1b3d" }), side: THREE.DoubleSide }));
-  label.position.set(-plot.w / 2 + 0.1 + 0.45, 0.6, plot.d / 2 - 0.1);
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.42), new THREE.MeshBasicMaterial({ map: textTexture(THREE, camp.owner, { w: 512, h: 154, font: "bold 84px system-ui, sans-serif", bg: "#f4efe2", color: "#2a1b3d", glow: 0 }), side: THREE.DoubleSide }));
+  label.position.set(-plot.w / 2 + 0.1 + 0.7, 0.95, plot.d / 2 - 0.06);
+  label.rotation.x = -0.35;
   root.add(label);
 
   const slots = campSlots(camp.plot);
