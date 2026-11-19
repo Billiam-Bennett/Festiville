@@ -142,6 +142,9 @@
     #shop-body { display: grid; gap: 8px; }
     .shop-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.08); }
     .shop-row .row { flex-wrap: nowrap; }
+    .sponsor { margin: 4px 0; padding: 6px 9px; border-left: 3px solid #ffb347; background: rgba(255,179,71,.12); border-radius: 4px; font-size: 13px; }
+    .sponsor b { color: #ffd36b; }
+    .sponsor a { color: #ffd36b; }
     .shop-h { margin: 8px 0 0; font-size: 14px; color: #ffd36b; }
     .spot-why { color: #7ee081; margin: 0; }
     .spot-why.bad { color: #ff9a9a; }
@@ -155,6 +158,38 @@
     #vprompt { position: fixed; left: 50%; transform: translateX(-50%); bottom: 170px; padding: 12px 20px; border-radius: 999px; white-space: nowrap;
       background: #fff; color: #2a1a3a; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
     @media (pointer: fine) { #prompt, #vprompt { bottom: 110px; } #toasts { bottom: 170px; } }
+
+    /* ---- Stage music (client/dj-ui.js) and rides (client/rides-ui.js) ---- */
+    #hud #mute-btn { pointer-events: auto; background: var(--panel); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 4px 12px; font-size: 16px; }
+    #now-playing { position: fixed; top: 52px; left: 50%; transform: translateX(-50%); width: min(300px, calc(100% - 24px)); padding: 10px 12px; display: grid; gap: 6px; z-index: 4; transition: opacity .4s; }
+    #now-playing.far { opacity: .7; }
+    #now-playing .np-stage { font-size: 12px; letter-spacing: .5px; text-transform: uppercase; color: #ffd36b; }
+    #np-who { font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+    #np-who a, #np-src a, #dj a { color: #ff8fcf; }
+    #np-player iframe { width: 100%; border: 0; border-radius: 8px; display: block; }
+    #np-ctrl { display: flex; gap: 6px; align-items: center; }
+    #np-vol { flex: 1; min-width: 60px; accent-color: var(--pink); }
+    @media (max-width: 700px) { #now-playing { top: auto; bottom: 250px; } }
+    #dj-btn, #cart-btn { position: fixed; bottom: 90px; width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 22px;
+      background: var(--panel); border: 2px solid rgba(255,255,255,.35); }
+    #dj-btn { right: 140px; }
+    #dj-btn.alert { border-color: #ffd36b; }
+    #cart-btn { right: 80px; border-color: #ffd36b; }
+    #cart-btn[aria-pressed="true"] { background: #ffd36b; }
+    @media (pointer: fine) { #dj-btn, #cart-btn { bottom: 114px; } }
+    #rprompt { position: fixed; left: 50%; transform: translateX(-50%); bottom: 170px; padding: 12px 20px; border-radius: 999px; white-space: nowrap;
+      background: #7ee081; color: #0f2a12; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
+    @media (pointer: fine) { #rprompt { bottom: 110px; } }
+    body.chatting #dj-btn, body.chatting #cart-btn, body.chatting #rprompt { visibility: hidden; }
+    #ride-card { position: fixed; left: 50%; transform: translateX(-50%); bottom: 100px; padding: 10px 14px; display: flex; gap: 10px; align-items: center; z-index: 4; width: max-content; max-width: calc(100% - 24px); }
+    #dj { max-height: min(80vh, 680px); overflow-y: auto; }
+    #dj header, #shuttle header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    #dj-body, #sh-list { display: grid; gap: 8px; }
+    .dj-log { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+    .field.check { grid-template-columns: auto 1fr; align-items: start; }
+    .sheet input[type=text], .sheet input[type=url], .sheet input[type=datetime-local], .sheet select {
+      font: inherit; font-size: 14px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08); color: #fff; }
+    .sheet select option { color: #111; }
 
     /* ---- Minimap ---- */
     #minimap-wrap { display: grid; gap: 6px; justify-items: center; }
@@ -334,12 +369,42 @@
   <div id="hud" hidden>
     <div id="hud-status">Live</div>
     <div id="hud-badges" hidden></div>
+    <button id="mute-btn" type="button" aria-label="Mute the stage music" hidden>🔊</button>
     <div id="hud-online">1 online</div>
   </div>
   <button id="dance" type="button" aria-pressed="false" hidden>Emote</button>
   <button id="chat-btn" type="button" aria-label="Chat" title="Chat (Enter)" hidden>💬</button>
   <button id="looks-btn" type="button" aria-label="Change your look" title="Change your look" hidden>👕</button>
   <button id="shop-btn" type="button" aria-label="Credits and shop" title="Credits and shop" hidden>🪙</button>
+  <button id="dj-btn" type="button" aria-label="DJ: play your music on a stage" title="DJs and what's on the stages" hidden>🎧</button>
+  <button id="cart-btn" type="button" aria-label="Drive your golf cart" aria-pressed="false" hidden>🛺</button>
+  <section id="now-playing" class="card" hidden aria-label="Now playing">
+    <div class="np-stage" id="np-stage"></div>
+    <div id="np-who"></div>
+    <div class="small" id="np-src"></div>
+    <div id="np-player"></div>
+    <div class="small" id="np-note"></div>
+    <div id="np-ctrl">
+      <button id="np-play" class="btn-sm btn-ghost" type="button" title="If it doesn't start by itself, tap here">▶</button>
+      <button id="np-mute" class="btn-sm btn-ghost" type="button">🔊 Mute</button>
+      <input id="np-vol" type="range" min="0" max="100" step="1" aria-label="Music volume" />
+      <button id="np-stop" class="btn-sm btn-ghost" type="button" hidden>Stop set</button>
+    </div>
+  </section>
+  <section id="dj" class="card sheet" hidden role="dialog" aria-labelledby="dj-title">
+    <header><h2 id="dj-title">🎧 Stages &amp; DJs</h2><button id="dj-close" class="btn-ghost btn-sm" type="button">Close</button></header>
+    <div id="dj-body"></div>
+  </section>
+  <section id="shuttle" class="card sheet" hidden role="dialog" aria-labelledby="sh-title">
+    <header><h2 id="sh-title">🚌 Shuttle</h2><button id="sh-close" class="btn-ghost btn-sm" type="button">Close</button></header>
+    <p class="small" id="sh-from"></p>
+    <div id="sh-list"></div>
+    <p class="small">Free, any time you're not on a timed quest.</p>
+  </section>
+  <section id="ride-card" class="card" hidden aria-live="polite">
+    <span>🎡 <b>On the Ferris wheel.</b> <span class="small">Look around with WASD, the arrows or the joystick.</span></span>
+    <button id="ride-off" class="btn-sm" type="button">Get off</button>
+  </section>
   <section id="shop" class="card sheet" hidden role="dialog" aria-labelledby="shop-title">
     <header><h2 id="shop-title">Shop</h2><button id="shop-close" class="btn-ghost btn-sm" type="button">Close</button></header>
     <div id="shop-tabs" class="tabs" role="tablist">
@@ -394,7 +459,7 @@
     <button type="submit">Send</button>
     <button id="chat-close" type="button" class="btn-ghost" aria-label="Close chat">×</button>
   </form>
-  <div id="help">WASD / arrows to move · Shift to run · Space to jump · 1-9 emotes · E to dance · T to talk or browse · Enter to chat · Scroll or +/- to zoom · M for map · Click a player to invite</div>
+  <div id="help">WASD / arrows to move · Shift to run · Space to jump · 1-9 emotes · E to dance · T to talk or browse · Enter to chat · Scroll or +/- to zoom · M for map · Click a player to invite · 🎧 stage music &amp; DJs · 🎡 Ferris wheel · 🚌 shuttle stops</div>
 
   <div id="toasts" aria-live="polite"></div>
 
@@ -402,6 +467,7 @@
   <div id="leftcol">
   <section id="tracker" class="card" hidden>
     <h3><span id="tr-name"></span><span class="timer" id="tr-timer"></span></h3>
+    <div class="sponsor small" id="tr-sponsor" hidden></div>
     <div class="obj" id="tr-obj"></div>
     <div class="bar"><i id="tr-bar"></i></div>
     <button id="tr-quit" class="btn-ghost btn-sm" type="button">Quit quest</button>
@@ -429,6 +495,7 @@
 
   <button id="prompt" type="button" hidden></button>
   <button id="vprompt" type="button" hidden></button>
+  <button id="rprompt" type="button" hidden></button>
 
   <section id="bigmap" hidden aria-label="Festival map">
     <div class="bm-map">
@@ -467,6 +534,7 @@
     <div class="who" id="of-who"></div>
     <h2 id="of-name"></h2>
     <p id="of-pitch"></p>
+    <p class="sponsor" id="of-sponsor" hidden></p>
     <p class="small" id="of-how"></p>
     <p class="small" id="of-badge"></p>
     <p class="blocked" id="of-blocked" hidden></p>

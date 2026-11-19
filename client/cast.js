@@ -42,7 +42,8 @@ export function createCast(THREE, { placeholder }) {
     root.userData.look = lookById(p.look)?.id ?? DEFAULT_LOOK;
     root.userData.recipe = recipe;
     root.userData.setTag = (name, sub) => { tag = [name, sub]; inner.userData.setTag?.(name, sub); };
-    root.userData.animate = (...args) => { emoteArgs = args; inner.userData.animate?.(...args); };
+    root.userData.seat = null;   // set by rides (client/rides-ui.js); the character inside does the sitting
+    root.userData.animate = (...args) => { emoteArgs = args; inner.userData.seat = root.userData.seat; inner.userData.animate?.(...args); };
     root.userData.dispose = () => { root.userData.disposed = true; inner.userData.dispose?.(); };
     const swap = (next) => {
       if (!next || root.userData.disposed) return;

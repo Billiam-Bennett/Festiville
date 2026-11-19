@@ -17,7 +17,7 @@ test("the default layout is valid and has the expected pieces", () => {
   assert.equal(out.warnings.length, 0, out.warnings.join("; "));
   const types = out.layout.items.reduce((m, i) => ((m[i.type] = (m[i.type] || 0) + 1), m), {});
   assert.equal(types.stall, 20);
-  assert.equal(types.stage, 2);
+  assert.equal(types.stage, 4);
   assert.ok(types.spot >= 3 && types.tent >= 3);
   assert.equal(out.layout.items.filter((i) => i.type === "npc" && i.ref === "juniper").length, 1);
 });
@@ -91,21 +91,21 @@ test("LayoutStore saves, keeps history, restores, and reloads", () => {
   try {
     const store = new LayoutStore({ dir });
     assert.equal(store.current().updatedAt, null);                 // starts on the default
-    const smaller = { items: defaultLayout().items.filter((i) => i.type !== "tree") };
+    const smaller = { items: defaultLayout().items.filter((i) => i.type !== "forest") };
     const out = store.save(smaller, "Sam");
     assert.equal(out.error, undefined);
-    assert.ok(!out.layout.items.some((i) => i.type === "tree"));
+    assert.ok(!out.layout.items.some((i) => i.type === "forest"));
     assert.equal(store.current().updatedBy, "Sam");
     assert.ok(existsSync(join(dir, "layout.json")));
 
     const out2 = store.save(defaultLayout(), "Sam");               // second save -> first is in history
-    assert.ok(out2.layout.items.some((i) => i.type === "tree"));
+    assert.ok(out2.layout.items.some((i) => i.type === "forest"));
     const hist = store.history();
     assert.ok(hist.length >= 1);
     store.restore(hist[0], "Sam");
-    assert.ok(!store.current().layout.items.some((i) => i.type === "tree"));   // back to the treeless one
+    assert.ok(!store.current().layout.items.some((i) => i.type === "forest"));   // back to the treeless one
 
     const reopened = new LayoutStore({ dir });                     // a fresh process sees the saved file
-    assert.ok(!reopened.current().layout.items.some((i) => i.type === "tree"));
+    assert.ok(!reopened.current().layout.items.some((i) => i.type === "forest"));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

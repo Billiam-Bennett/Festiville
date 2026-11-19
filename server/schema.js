@@ -18,6 +18,7 @@ export class Player extends Schema {
     this.recipe = "";          // parts-based character (shared/parts.js), or "" for the classic `look`
     this.staff = false;        // festival staff (moderators) get a STAFF tag
     this.accessories = "";     // comma-separated cosmetic accessory ids (shared/accessories.js)
+    this.ride = "";            // "" on foot, "wheel:<n>" in a Ferris wheel gondola, "cart" driving a golf cart (shared/rides.js)
     // Avatar fields — map these to your existing avatar builder.
     this.skinTone = "#c68642";
     this.shirtColor = "#ff4fa3";
@@ -37,6 +38,7 @@ defineTypes(Player, {
   recipe: "string",
   staff: "boolean",
   accessories: "string",
+  ride: "string",
   skinTone: "string",
   shirtColor: "string",
 });
