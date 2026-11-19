@@ -4,7 +4,7 @@
 // linking to their page; the signs over the stages; the 🎧 panel for DJs (sign up, link a mix, end
 // your set) and for staff (stop a set, approve / remove DJs, put waiting mixes on, the record).
 // The server decides everything (server/dj.js); this shows it and asks.
-import { DJ_TERMS, DJ_LIMITS, GENRES, genreById, loudest, PROVIDERS, soundcloudPlayerTarget } from "../shared/dj.js";
+import { DJ_TERMS, DJ_LIMITS, GENRES, genreById, loudest, loopPosition, PROVIDERS, soundcloudPlayerTarget } from "../shared/dj.js";
 import { genreName } from "../shared/layout.js";
 import { LAYOUT } from "../shared/venue.js";
 
@@ -52,9 +52,15 @@ function makePlayer(host, set, offsetSec) {
         p.apply = (v) => w.setVolume(Math.round(v * 100));
         p.play = () => w.play();
         p.apply(p.volume);
-        if (offsetSec > 2) w.seekTo(offsetSec * 1000);
-        w.play();
+        // Jump to where the set is now, looping a track that's shorter than the set.
+        w.getDuration((ms) => {
+          if (p.dead) return;
+          const at = loopPosition(offsetSec, ms / 1000);
+          if (at > 2) w.seekTo(at * 1000);
+          w.play();
+        });
       });
+      w.bind(window.SC.Widget.Events.FINISH, () => { if (!p.dead) { w.seekTo(0); w.play(); } });
     }).catch(() => {});
   } else if (set.provider === "youtube") {
     // YouTube's player stays visible (their rules for embedded players), in the card.
@@ -64,15 +70,19 @@ function makePlayer(host, set, offsetSec) {
       if (p.dead) return;
       const yt = new window.YT.Player(div, {
         width: 240, height: 200, videoId: set.mixId,
-        playerVars: { autoplay: 1, start: Math.floor(offsetSec), playsinline: 1, rel: 0, modestbranding: 1 },
+        playerVars: { autoplay: 1, playsinline: 1, rel: 0, modestbranding: 1 },
         events: { onReady: (e) => {
           if (p.dead) return;
           p.ready = true;
           p.apply = (v) => { e.target.setVolume(Math.round(v * 100)); if (v > 0 && e.target.isMuted()) e.target.unMute(); };
           p.play = () => e.target.playVideo();
           p.apply(p.volume);
+          const at = loopPosition(offsetSec, e.target.getDuration());
+          if (at > 2) e.target.seekTo(at, true);
           e.target.playVideo();
-        } },
+        },
+        // A video shorter than the set starts again when it ends.
+        onStateChange: (e) => { if (!p.dead && e.data === 0) { e.target.seekTo(0, true); e.target.playVideo(); } } },
       });
       const old = p.stop;
       p.stop = () => { try { yt.destroy(); } catch {} old(); };
@@ -88,7 +98,8 @@ function makePlayer(host, set, offsetSec) {
         let playing = null;
         p.apply = (v) => { const on = v > 0.04; if (on !== playing) { playing = on; on ? w.play() : w.pause(); } };
         p.play = () => { playing = true; w.play(); };
-        if (offsetSec > 2) w.seek(offsetSec);
+        Promise.resolve(w.getDuration?.()).then((d) => { if (!p.dead && offsetSec > 2) w.seek(loopPosition(offsetSec, d)); }).catch(() => {});
+        w.events?.ended?.on?.(() => { if (!p.dead && playing) { w.seek(0); w.play(); } });
         p.apply(p.volume);
       });
     }).catch(() => {});
@@ -112,6 +123,8 @@ export function setupDj({ mp, me, toast, account, festival }) {
     muteBtn.textContent = muted || master === 0 ? "🔇" : "🔊";
     muteBtn.setAttribute("aria-pressed", String(muted));
     muteBtn.title = muted ? "Music is muted. Tap to hear the stages." : "Mute the stage music";
+    muteBtn.setAttribute("aria-label", muted ? "Unmute the stage music" : "Mute the stage music");
+    muteBtn.setAttribute("aria-pressed", muted ? "true" : "false");
     $("np-mute").textContent = muted ? "🔇 Unmute" : "🔊 Mute";
     $("np-vol").value = String(Math.round(master * 100));
   };

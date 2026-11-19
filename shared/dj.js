@@ -120,6 +120,15 @@ export function parseMixLink(raw) {
   return { error: "Mixes have to be on SoundCloud, Mixcloud or YouTube." };
 }
 
+// ---------- Where in the track everyone is ----------
+// Everyone hears the same moment: seconds since the set started. A track shorter than the set loops,
+// so after it ends it starts again, still in step for everyone. durationSec 0 (not known yet): as is.
+export function loopPosition(offsetSec, durationSec) {
+  const t = Math.max(0, Number(offsetSec) || 0);
+  const d = Number(durationSec) || 0;
+  return d > 1 ? t % d : t;
+}
+
 // ---------- How loud a stage is where you're standing ----------
 // Loud at the stage, fading with distance, silent by the time you reach the Campground.
 // near: full volume inside this many meters. far: silent beyond this.

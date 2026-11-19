@@ -296,3 +296,11 @@ test("private SoundCloud: the server looks up the player for a secret link, and 
     assert.equal(playing.url, SECRET_LINK);   // the record of who linked what keeps the link they pasted
   } finally { done(); }
 });
+
+test("a track shorter than its set loops, and everyone stays at the same moment of it", async () => {
+  const { loopPosition } = await import("../shared/dj.js");
+  assert.equal(loopPosition(30, 124), 30);           // first play: as is
+  assert.equal(loopPosition(124 * 3 + 10, 124), 10);  // 6+ minutes into a 60-minute set of a 2:04 track
+  assert.equal(loopPosition(500, 0), 500);            // length not known yet: as is
+  assert.equal(loopPosition(-5, 124), 0);
+});
