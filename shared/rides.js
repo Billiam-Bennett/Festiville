@@ -86,3 +86,91 @@ export function stopAt(items, pos, range = SHUTTLE.range) {
   }
   return best;
 }
+
+// ---------- Golf cart parking ----------
+// You can step out of your cart and leave it only in golf cart parking: "carpark" items in the layout
+// (🅿️, placed in the festival builder like everything else). Each has bays side by side; a cart left
+// there waits until its owner drives it again, leaves the festival, or `returnAfter` seconds pass, then
+// it goes back to their camp. Stepping out anywhere else sends the cart straight home (the game warns
+// you first). Parked carts are solid, and only their owner can drive them.
+export const CART_PARKING = {
+  bayWidth: 2.4,       // meters per bay, side by side
+  bayDepth: 3.4,
+  reach: 2,            // how far outside the painted lot you can still park (you don't have to be exact)
+  returnAfter: 10 * 60,
+  getInRange: 6,       // press 🛺 this close to your parked cart and you get in where it is
+};
+export const lotsOf = (items) => (items ?? []).filter((i) => i.type === "carpark");
+export const bayCount = (lot) => Math.max(1, Math.floor((lot.w ?? 0) / CART_PARKING.bayWidth));
+
+// A point in the lot's own frame (lx across the bays, lz toward its open front) to the world, and back.
+function toWorld(lot, lx, lz) {
+  const r = rad(lot.rot || 0), c = Math.cos(r), s = Math.sin(r);
+  return { x: lot.x + lx * c + lz * s, z: lot.z - lx * s + lz * c };
+}
+function toLot(lot, p) {
+  const r = rad(lot.rot || 0), c = Math.cos(r), s = Math.sin(r), dx = p.x - lot.x, dz = p.z - lot.z;
+  return { lx: dx * c - dz * s, lz: dx * s + dz * c };
+}
+const bayX = (lot, k) => -lot.w / 2 + CART_PARKING.bayWidth * (k + 0.5) + (lot.w - bayCount(lot) * CART_PARKING.bayWidth) / 2;
+
+// Where the cart in bay k stands, nose in (facing the back of the lot).
+export function bayPos(lot, k) {
+  const p = toWorld(lot, bayX(lot, k), 0);
+  return { x: p.x, z: p.z, rotY: rad(lot.rot || 0) + Math.PI };
+}
+// Where you're put when you step out: just in front of your bay, on the open side.
+export function stepOutPoint(lot, k) { return toWorld(lot, bayX(lot, k), lot.d / 2 + 1); }
+
+// The parking you're in (within `reach` of its painted edges), or null.
+export function lotAt(items, pos) {
+  let best = null, bestD = Infinity;
+  for (const lot of lotsOf(items)) {
+    const { lx, lz } = toLot(lot, pos);
+    const over = Math.max(Math.abs(lx) - lot.w / 2, Math.abs(lz) - lot.d / 2, 0);
+    if (over <= CART_PARKING.reach && over < bestD) { best = lot; bestD = over; }
+  }
+  return best;
+}
+
+// Where a cart at `pos` would be parked: { lot, bay, x, z, rotY }, or { error: "restricted" } when it
+// isn't in a parking, or { error: "full", lot }. taken: Set of "lotId:bay" already used by other carts.
+export function parkingFor(items, pos, taken = new Set()) {
+  const lot = pos && lotAt(items, pos);
+  if (!lot) return { error: "restricted" };
+  let best = -1, bestD = Infinity;
+  for (let k = 0; k < bayCount(lot); k++) {
+    if (taken.has(`${lot.id}:${k}`)) continue;
+    const b = bayPos(lot, k), d = Math.hypot(b.x - pos.x, b.z - pos.z);
+    if (d < bestD) { best = k; bestD = d; }
+  }
+  if (best < 0) return { error: "full", lot };
+  return { lot, bay: best, ...bayPos(lot, best) };
+}
+
+// The nearest parking and how to get there ("60 m north-east"), for the warning.
+export function nearestLot(items, pos) {
+  let best = null, bestD = Infinity;
+  for (const lot of lotsOf(items)) { const d = Math.hypot(lot.x - pos.x, lot.z - pos.z); if (d < bestD) { best = lot; bestD = d; } }
+  if (!best) return null;
+  const dirs = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
+  // North is -z on the map.
+  const a = Math.atan2(best.x - pos.x, -(best.z - pos.z));
+  const dir = dirs[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
+  return { lot: best, dist: Math.round(bestD), dir };
+}
+
+// A parked cart in the synced player state: "lotId:bay:x:z:rotY" ("" when it isn't parked out).
+export const encodeParked = (p) => (p ? `${p.lot.id ?? p.lot}:${p.bay}:${p.x.toFixed(2)}:${p.z.toFixed(2)}:${p.rotY.toFixed(3)}` : "");
+export function decodeParked(s) {
+  if (typeof s !== "string" || !s) return null;
+  const [lot, bay, x, z, rotY] = s.split(":");
+  const n = [bay, x, z, rotY].map(Number);
+  return n.every(Number.isFinite) ? { lot, bay: n[0], x: n[1], z: n[2], rotY: n[3] } : null;
+}
+
+// What's solid about a parked cart: two posts along its length (it's 2.3 m long and 1.3 m wide).
+export function cartSolids({ x, z, rotY }) {
+  const fx = Math.sin(rotY), fz = Math.cos(rotY);
+  return [{ x: x + fx * 0.55, z: z + fz * 0.55, r: 0.7 }, { x: x - fx * 0.55, z: z - fz * 0.55, r: 0.7 }];
+}

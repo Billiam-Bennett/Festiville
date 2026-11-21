@@ -1,7 +1,7 @@
 // Rides: who is on the Ferris wheel and who is driving a golf cart. All the rules, with no networking
 // in here (the game room feeds in positions and requests and copies `rideOf()` into the synced state;
 // test/rides.test.js tests this directly).
-import { WHEEL, SHUTTLE, freeGondola, fromBottom, nextBottom, boardPoint, gondolaPos, stopsOf, stopAt } from "../shared/rides.js";
+import { WHEEL, SHUTTLE, CART_PARKING, freeGondola, fromBottom, nextBottom, boardPoint, gondolaPos, stopsOf, stopAt, parkingFor, stepOutPoint, lotsOf, encodeParked } from "../shared/rides.js";
 import { resolveSolids, inWater } from "../shared/sim.js";
 import { MEMBERSHIP } from "../shared/economy.js";
 
@@ -11,6 +11,7 @@ export class RideSystem {
   constructor() {
     this.wheel = new Map();   // player id -> { gondola, endsAt }
     this.carts = new Set();   // player ids driving a cart
+    this.parked = new Map();  // player id -> { lot, bay, x, z, rotY, until }: their cart left in golf cart parking
     this.events = [];
   }
 
@@ -20,7 +21,9 @@ export class RideSystem {
     return w ? `wheel:${w.gondola}` : this.carts.has(id) ? "cart" : "";
   }
   onWheel(id) { return this.wheel.has(id); }
-  leave(id) { this.wheel.delete(id); this.carts.delete(id); }
+  // What goes in the player's synced `parked` field (shared/rides.js → encodeParked).
+  parkedOf(id) { return encodeParked(this.parked.get(id)); }
+  leave(id) { this.wheel.delete(id); this.carts.delete(id); this.parked.delete(id); }   // their cart goes home
 
   // ---------- Ferris wheel ----------
   // wheel: the layout's wheel item (or null). pos: where the player is. now: room time in seconds.
@@ -69,14 +72,57 @@ export class RideSystem {
   }
 
   // ---------- Golf cart ----------
-  // owns: does this account have a cart (server/entitlements.js → hasGolfCart). hasCamp: carts are
-  // parked at your camp, so you need one.
-  cart(id, on, { owns = false, hasCamp = false } = {}) {
-    if (!on) { this.carts.delete(id); return; }
-    if (!owns) return this.err(id, `Golf carts are for premium members (${MEMBERSHIP.name}).`);
-    if (!hasCamp) return this.err(id, "Your golf cart is parked at your camp. Claim your camp spot first (🪙 → Camp).");
-    if (this.wheel.has(id)) return this.err(id, "Get off the Ferris wheel first.");
+  // on: drive (true) or step out (false). owns: does this account have a cart (server/entitlements.js →
+  // hasGolfCart). hasCamp: a cart lives at your camp, so you need one. stay: step out and leave the cart
+  // where you are, which only works in golf cart parking; anywhere else it goes back to your camp.
+  // Returns where to put the player ({ x, z, rotY? }) when that changes, else null.
+  cart(id, on, { owns = false, hasCamp = false, stay = false, pos = null, items = [], now = 0 } = {}) {
+    if (!on) {
+      if (!this.carts.has(id)) return null;
+      this.carts.delete(id);
+      if (!stay) return null;
+      const spot = parkingFor(items, pos, this.takenBays(id));
+      if (spot.error) {
+        this.err(id, spot.error === "full"
+          ? `${spot.lot.label} is full, so your cart went back to your camp.`
+          : "That isn't golf cart parking (🅿️), so your cart went back to your camp.");
+        return null;
+      }
+      this.parked.set(id, { ...spot, until: now + CART_PARKING.returnAfter });
+      this.emit(id, { type: "toast", text: `🅿️ Parked at ${spot.lot.label}. It waits here for ${Math.round(CART_PARKING.returnAfter / 60)} minutes, then heads back to your camp.` });
+      return stepOutPoint(spot.lot, spot.bay);
+    }
+    if (!owns) { this.err(id, `Golf carts are for premium members (${MEMBERSHIP.name}).`); return null; }
+    if (!hasCamp) { this.err(id, "Your golf cart is parked at your camp. Claim your camp spot first (🪙 → Camp)."); return null; }
+    if (this.wheel.has(id)) { this.err(id, "Get off the Ferris wheel first."); return null; }
+    if (this.carts.has(id)) return null;
     this.carts.add(id);
+    // Left in a parking nearby: get in where it is. Further away, it comes to you, like from camp.
+    const pk = this.parked.get(id);
+    this.parked.delete(id);
+    if (pk && pos && dist(pos, pk) <= CART_PARKING.getInRange) return { x: pk.x, z: pk.z, rotY: pk.rotY };
+    return null;
+  }
+
+  // Bays other carts are using: "lotId:bay".
+  takenBays(exceptId) {
+    const out = new Set();
+    for (const [id, p] of this.parked) if (id !== exceptId) out.add(`${p.lot.id}:${p.bay}`);
+    return out;
+  }
+
+  // Every second or so: carts left too long (or in a parking that's been removed) go back to camp.
+  // Returns the ids whose cart moved.
+  expireParked(now, items) {
+    const lots = new Set(lotsOf(items).map((l) => l.id));
+    const gone = [];
+    for (const [id, p] of this.parked) {
+      if (now < p.until && lots.has(p.lot.id)) continue;
+      this.parked.delete(id);
+      gone.push(id);
+      this.emit(id, { type: "toast", text: "Your golf cart went back to your camp." });
+    }
+    return gone;
   }
 
   // ---------- Shuttle ----------

@@ -13,7 +13,7 @@ import { buy, rewardQuest } from "./shop.js";
 import { campStore, claimCamp, upgradeCamp } from "./camps.js";
 import { campSolids } from "../shared/camps.js";
 import { RideSystem } from "./rides.js";
-import { wheelOf, onWheel } from "../shared/rides.js";
+import { wheelOf, onWheel, cartSolids } from "../shared/rides.js";
 import { djStore, resolveSoundcloud } from "./dj.js";
 import { parseMixLink } from "../shared/dj.js";
 import { LAYOUT, stages } from "../shared/venue.js";
@@ -123,10 +123,11 @@ export class FestivalRoom extends Room {
     this.onMessage("camp", (client, raw) => this.handleCamp(client, raw && typeof raw === "object" ? raw : {}));
     this.onMessage("camps", (client) => client.send("camps", campStore().all()));
     // What's set up in a camp is solid (shared/sim.js), so keep the collision world in step with the camps.
-    // A parked golf cart is solid too, except while its owner is out driving it.
+    // A parked golf cart is solid too, at camp or in golf cart parking (shared/rides.js → CART_PARKING).
     this.solidCamps = () => {
-      const driving = new Set([...this.rides.carts].map((id) => this.state.players.get(id)?.name.toLowerCase()));
-      setSolids("camps", campStore().all().flatMap((c) => campSolids(c, { cart: !!c.cart && !driving.has(c.id) })));
+      const away = new Set([...this.rides.carts, ...this.rides.parked.keys()].map((id) => this.state.players.get(id)?.name.toLowerCase()));
+      setSolids("camps", campStore().all().flatMap((c) => campSolids(c, { cart: !!c.cart && !away.has(c.id) })));
+      setSolids("parked carts", [...this.rides.parked.values()].flatMap(cartSolids));
     };
     this.solidCamps();
     this.stopCampUpdates = campStore().onChange((camp, id) => { this.solidCamps(); this.broadcast("camp", { id, camp }); });
@@ -159,10 +160,14 @@ export class FestivalRoom extends Room {
       }
       this.sendRideEvents();
     });
-    this.onMessage("cart", (client, on) => {
-      const a = this.account(client.sessionId);
-      if (!a) return;
-      this.rides.cart(client.sessionId, on === true, { owns: hasGolfCart(a), hasCamp: !!campStore().of(a.id) });
+    // The golf cart: true / { on: true } to drive; false / { on: false } to step out and send it back to
+    // camp; { on: false, stay: true } to leave it in the golf cart parking you're in.
+    this.onMessage("cart", (client, raw) => {
+      const a = this.account(client.sessionId), id = client.sessionId, p = this.state.players.get(id);
+      if (!a || !p) return;
+      const on = raw === true || raw?.on === true;
+      const at = this.rides.cart(id, on, { owns: hasGolfCart(a), hasCamp: !!campStore().of(a.id), stay: raw?.stay === true, pos: p, items: LAYOUT.items, now: this.elapsed });
+      if (at) { p.x = at.x; p.z = at.z; if (at.rotY !== undefined) p.rotY = at.rotY; }
       this.syncRide(client.sessionId);
       this.solidCamps();
       this.sendRideEvents();
@@ -245,6 +250,12 @@ export class FestivalRoom extends Room {
       }
       this.sendRideEvents();
     }
+    // Golf carts left in parking too long go back to their camps (checked once a second).
+    if (this.rides.parked.size && Math.floor(this.elapsed) !== this.lastParkCheck) {
+      this.lastParkCheck = Math.floor(this.elapsed);
+      const gone = this.rides.expireParked(this.elapsed, LAYOUT.items);
+      if (gone.length) { gone.forEach((id) => this.syncRide(id)); this.solidCamps(); this.sendRideEvents(); }
+    }
     // Players standing inside each other drift apart (a soft push; nobody gets trapped).
     separatePlayers(this.state.players.values(), dt);
     // One-shot emotes end on time; walking off ends a dance (or stands you up).
@@ -301,8 +312,9 @@ export class FestivalRoom extends Room {
   // ---------- Rides ----------
   syncRide(sessionId) {
     const p = this.state.players.get(sessionId);
-    const ride = this.rides.rideOf(sessionId);
+    const ride = this.rides.rideOf(sessionId), parked = this.rides.parkedOf(sessionId);
     if (p && p.ride !== ride) p.ride = ride;
+    if (p && p.parked !== parked) p.parked = parked;
   }
   sendRideEvents() {
     for (const { to, type, ...msg } of this.rides.drainEvents()) this.clients.find((c) => c.sessionId === to)?.send(type, msg);
@@ -604,9 +616,9 @@ export class FestivalRoom extends Room {
     this.inputs.delete(client.sessionId);
     this.emotes.delete(client.sessionId);
     this.quests.leave(client.sessionId);
-    const wasDriving = this.rides.carts.has(client.sessionId);
+    const hadCartOut = this.rides.carts.has(client.sessionId) || this.rides.parked.has(client.sessionId);
     this.rides.leave(client.sessionId);
-    if (wasDriving) this.solidCamps();   // their cart is back at their camp
+    if (hadCartOut) this.solidCamps();   // their cart is back at their camp
     this.chat.leave(client.sessionId);
     this.recentChat.delete(client.sessionId);
     const accountId = this.accountOf.get(client.sessionId);

@@ -52,6 +52,7 @@ export const TYPES = {
   forest:   { label: "Forest", icon: "🌳", size: (i) => [i.w, i.d], fields: ["w", "d"] },
   wheel:    { label: "Ferris wheel", icon: "🎡", size: () => [12, 5], fields: ["label"], solid: "box" },
   stop:     { label: "Shuttle stop", icon: "🚌", size: () => [3, 2], fields: ["label"] },
+  carpark:  { label: "Golf cart parking", icon: "🅿️", size: (i) => [i.w, i.d], fields: ["w", "d", "label"] },
   art:      { label: "Art / service tent", icon: "🗿", size: (i) => ART[i.variant]?.size ?? [3, 3], fields: ["variant", "label"], solid: "box" },
   arch:     { label: "Entrance sign", icon: "⛩️", size: (i) => [i.w, 1], fields: ["text", "w", "color"] },
   lights:   { label: "String lights", icon: "💡", size: (i) => [i.w, i.d], fields: ["w", "d"] },
@@ -115,6 +116,17 @@ export function forestTrees(forest, items = []) {
 // through the gate, walk up the lane between the two halves of the Campground, and cross the bridge.
 // The section names, colors and what's in them are just layout data: rename or refill them in the
 // festival builder. Each stage has a genre (GENRES above), also editable there.
+// Golf cart parking by the places people drive to. Also added to a saved layout that has none
+// (addMissingParking), where it doesn't land on anything.
+const DEFAULT_PARKING = [
+  { id: "park_wheel", x: 62, z: 44, rot: 0, w: 9.6, d: 5, label: "Ferris Wheel parking" },
+  { id: "park_main", x: 34, z: -92, rot: 0, w: 9.6, d: 5, label: "Main Stage parking" },
+  { id: "park_food", x: -22, z: 74, rot: 0, w: 9.6, d: 5, label: "Food Court parking" },
+  { id: "park_east", x: 128, z: -64, rot: 0, w: 9.6, d: 5, label: "East Side parking" },
+  { id: "park_grove", x: -128, z: -64, rot: 0, w: 9.6, d: 5, label: "Grove parking" },
+  { id: "park_porch", x: -138, z: 36, rot: 0, w: 9.6, d: 5, label: "Back Porch parking" },
+];
+
 export function defaultLayout() {
   const items = [];
   let n = 0;
@@ -173,6 +185,9 @@ export function defaultLayout() {
     ["stop_food", -10, 62, "Food Court & Ferris Wheel"], ["stop_main", 24, -86, "Main Stage"],
     ["stop_east", 114, -56, "East Side"], ["stop_grove", -114, -56, "The Grove"],
   ]) add("stop", { id, x, z, label });
+
+  // --- Golf cart parking: the only places a cart can be left (shared/rides.js → CART_PARKING) ---
+  for (const p of DEFAULT_PARKING) add("carpark", { ...p });
 
   // --- Info & First Aid, by the main bridge where everyone passes ---
   add("area", { id: "help", x: 28, z: 64, w: 30, d: 12, color: "#8f7a5a", label: "Info & First Aid" });
@@ -319,6 +334,8 @@ export function sanitizeLayout(raw, { knownRefs = [], requiredRefs = [] } = {}) 
       case "spot": it.where = text(r.where, 60) || "somewhere on the grounds"; break;
       case "art": it.variant = ART[r.variant] ? r.variant : "totem"; it.label = text(r.label, 30); break;
       case "stop": it.label = text(r.label, 30) || "Shuttle stop"; break;
+      // Bays are 2.4 m wide side by side (shared/rides.js → CART_PARKING); the open side faces `rot`.
+      case "carpark": it.w = round1(num(r.w, 2.4, 40, 9.6)); it.d = round1(num(r.d, 3.4, 12, 5)); it.label = text(r.label, 30) || "Golf cart parking"; break;
     }
     items.push(it);
   }
@@ -332,4 +349,28 @@ export function sanitizeLayout(raw, { knownRefs = [], requiredRefs = [] } = {}) 
   if (items.filter((i) => i.type === "spot").length < 3) warnings.push("Lost & Found needs at least 3 totem hiding spots; it'll use the usual ones until you add them.");
   if (items.filter((i) => i.type === "tent" && i.orders).length < 3) warnings.push("Vendor Rush needs at least 3 tents marked \"takes orders\"; it'll use the usual ones until you add them.");
   return { layout: { version: LAYOUT_VERSION, items }, warnings };
+}
+
+/**
+ * A layout saved before golf cart parking existed has none, so carts could never be left anywhere.
+ * Add the default parking to it, skipping any spot that would land on something already there.
+ * Returns the ids added (the layout is changed in place).
+ */
+export function addMissingParking(layout) {
+  if (!layout?.items || layout.items.some((i) => i.type === "carpark")) return [];
+  const ids = new Set(layout.items.map((i) => i.id));
+  const half = (i) => { const [w, d] = TYPES[i.type]?.size?.(i) ?? [0, 0]; return Math.hypot(w, d) / 2; };
+  const busy = layout.items.filter((i) => TYPES[i.type]?.solid || ["stage", "stall", "wheel", "art", "tent", "table", "water", "stop", "npc"].includes(i.type));
+  const added = [];
+  for (const p of DEFAULT_PARKING) {
+    if (ids.has(p.id)) continue;
+    const lot = { type: "carpark", ...p };
+    const clash = busy.some((i) => (i.type === "water"
+      ? Math.abs(i.x - lot.x) < i.w / 2 + half(lot) && Math.abs(i.z - lot.z) < i.d / 2 + half(lot)
+      : Math.hypot(i.x - lot.x, i.z - lot.z) < half(i) + half(lot)));
+    if (clash || layout.items.length >= MAX_ITEMS) continue;
+    layout.items.push(lot);
+    added.push(lot.id);
+  }
+  return added;
 }

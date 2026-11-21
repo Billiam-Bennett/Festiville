@@ -187,3 +187,122 @@ test("the shuttle: a free ride between the sections, from stop to stop, but not 
   const out = sanitizeLayout({ items: [{ type: "stop", x: 5, z: 5, label: "<b>Dock</b>" }, { type: "stop", x: 9, z: 9 }] });
   assert.deepEqual(out.layout.items.map((i) => i.label), ["bDock/b", "Shuttle stop"]);
 });
+
+// ---------- Golf cart parking ----------
+import { CART_PARKING, lotsOf, bayCount, bayPos, stepOutPoint, lotAt, parkingFor, nearestLot, encodeParked, decodeParked, cartSolids } from "../shared/rides.js";
+import { addMissingParking } from "../shared/layout.js";
+
+const LOTS = lotsOf(ITEMS);
+const lot = (id) => LOTS.find((l) => l.id === id);
+
+test("golf cart parking: by the busy places, on open ground, with room to step out", () => {
+  setLayoutSolids(ITEMS);
+  assert.ok(LOTS.length >= 5, "parking in every section");
+  assert.ok(Math.hypot(lot("park_wheel").x - wheel.x, lot("park_wheel").z - wheel.z) < 25, "parking by the Ferris wheel");
+  const main = ITEMS.find((i) => i.id === "stage_main");
+  assert.ok(Math.hypot(lot("park_main").x - main.x, lot("park_main").z - main.z) < 50, "parking by the Main Stage");
+  for (const l of LOTS) {
+    assert.equal(bayCount(l), 4, `${l.id} has 4 bays`);
+    for (let k = 0; k < bayCount(l); k++) {
+      const b = bayPos(l, k), out = stepOutPoint(l, k);
+      assert.ok(!blockedAt(b.x, b.z, 1.0), `${l.id} bay ${k} is open ground`);
+      assert.ok(!blockedAt(out.x, out.z), `${l.id}: you can step out of bay ${k}`);
+    }
+  }
+});
+
+test("golf cart parking: you park in the nearest free bay, a little outside the lines still counts, and a full lot is full", () => {
+  const l = lot("park_wheel");
+  assert.equal(lotAt(ITEMS, { x: l.x, z: l.z })?.id, l.id);
+  assert.equal(lotAt(ITEMS, { x: l.x, z: l.z + l.d / 2 + CART_PARKING.reach - 0.1 })?.id, l.id, "just in front of the lot");
+  assert.equal(lotAt(ITEMS, { x: l.x, z: l.z + l.d / 2 + CART_PARKING.reach + 1 }), null, "too far out");
+  const right = bayPos(l, 3);
+  const spot = parkingFor(ITEMS, { x: right.x + 0.3, z: right.z + 2 });
+  assert.equal(spot.bay, 3, "the bay you drove up to");
+  assert.equal(parkingFor(ITEMS, { x: right.x, z: right.z }, new Set([`${l.id}:3`])).bay, 2, "next one over when it's taken");
+  const full = parkingFor(ITEMS, { x: l.x, z: l.z }, new Set([0, 1, 2, 3].map((k) => `${l.id}:${k}`)));
+  assert.equal(full.error, "full");
+  assert.equal(full.lot.id, l.id);
+  assert.equal(parkingFor(ITEMS, { x: 0, z: 0 }).error, "restricted", "the middle of the Main Field isn't parking");
+  // A parked cart faces into its bay and is solid along its length.
+  const b = bayPos(l, 0);
+  const [s1, s2] = cartSolids(b);
+  assert.ok(Math.abs(Math.hypot(s1.x - s2.x, s1.z - s2.z) - 1.1) < 1e-9);
+  assert.deepEqual(decodeParked(encodeParked({ lot: l, bay: 0, ...b })), { lot: l.id, bay: 0, x: +b.x.toFixed(2), z: +b.z.toFixed(2), rotY: +b.rotY.toFixed(3) });
+  assert.equal(decodeParked(""), null);
+  // The warning says where the nearest parking is.
+  const near = nearestLot(ITEMS, { x: wheel.x, z: wheel.z - 30 });
+  assert.equal(near.lot.id, "park_wheel");
+  assert.match(near.dir, /south/);
+});
+
+test("golf cart parking: step out in parking and the cart stays; anywhere else it goes home; it waits 10 minutes", () => {
+  const rides = new RideSystem();
+  const l = lot("park_wheel"), inLot = { x: l.x, z: l.z }, opts = { owns: true, hasCamp: true, items: ITEMS };
+  const toasts = (id) => rides.drainEvents().filter((e) => e.to === id).map((e) => e.text).join(" | ");
+  rides.cart("a", true, opts);
+  const out = rides.cart("a", false, { ...opts, stay: true, pos: inLot, now: 100 });
+  assert.ok(out, "you're put beside your cart");
+  assert.ok(!rides.carts.has("a"), "you're on foot");
+  const pk = decodeParked(rides.parkedOf("a"));
+  assert.equal(pk.lot, l.id);
+  assert.ok(Math.hypot(out.x - pk.x, out.z - pk.z) < l.d + 1, "standing next to it");
+  assert.match(toasts("a"), /Parked at Ferris Wheel parking.*10 minutes/);
+
+  // Three more carts fill the lot; the fifth gets sent home, and is told so.
+  for (const id of ["b", "c", "d"]) { rides.cart(id, true, opts); rides.cart(id, false, { ...opts, stay: true, pos: inLot, now: 100 }); }
+  assert.equal(new Set([...rides.parked.values()].map((p) => p.bay)).size, 4, "four different bays");
+  rides.drainEvents();
+  rides.cart("e", true, opts);
+  assert.equal(rides.cart("e", false, { ...opts, stay: true, pos: inLot, now: 100 }), null);
+  assert.ok(!rides.parked.has("e") && !rides.carts.has("e"));
+  assert.match(toasts("e"), /Ferris Wheel parking is full, so your cart went back to your camp/);
+
+  // Not in parking: home it goes (the game warns before it asks the server for this).
+  rides.cart("f", true, opts);
+  rides.cart("f", false, { ...opts, stay: true, pos: { x: 0, z: 0 }, now: 100 });
+  assert.ok(!rides.parked.has("f"));
+  assert.match(toasts("f"), /isn't golf cart parking/);
+  rides.cart("f", true, opts);
+  assert.equal(rides.cart("f", false, opts), null, "plain step-out: straight home");
+  assert.ok(!rides.parked.has("f"));
+
+  // Drive again next to your parked cart: you get in where it is. From far away it comes to you.
+  const atA = decodeParked(rides.parkedOf("a"));
+  const back = rides.cart("a", true, { ...opts, pos: { x: atA.x + 2, z: atA.z + 2 } });
+  assert.ok(Math.hypot(back.x - atA.x, back.z - atA.z) < 0.01 && Math.abs(back.rotY - atA.rotY) < 0.001, "in the driver's seat, facing the way it's parked");
+  assert.ok(rides.carts.has("a") && !rides.parked.has("a"));
+  assert.equal(rides.cart("b", true, { ...opts, pos: { x: 0, z: 0 } }), null);
+  assert.ok(!rides.parked.has("b"), "called over from the parking");
+
+  // After 10 minutes (or when the parking is removed, or you leave), it goes back to your camp.
+  assert.deepEqual(rides.expireParked(100 + CART_PARKING.returnAfter - 1, ITEMS), []);
+  rides.drainEvents();
+  assert.deepEqual(rides.expireParked(100 + CART_PARKING.returnAfter, ITEMS).sort(), ["c", "d"]);
+  assert.match(toasts("c"), /went back to your camp/);
+  rides.cart("g", true, opts); rides.cart("g", false, { ...opts, stay: true, pos: inLot, now: 200 });
+  assert.deepEqual(rides.expireParked(201, ITEMS.filter((i) => i.id !== l.id)), ["g"]);
+  rides.cart("h", true, opts); rides.cart("h", false, { ...opts, stay: true, pos: inLot, now: 200 });
+  rides.leave("h");
+  assert.equal(rides.parkedOf("h"), "");
+});
+
+test("golf cart parking: the builder keeps it, and a layout saved before parking existed gets some", () => {
+  const out = sanitizeLayout({ items: [{ type: "carpark", x: 10, z: 20, rot: 90, w: 100, d: 1 }] });
+  const p = out.layout.items[0];
+  assert.equal(p.type, "carpark");
+  assert.equal(p.w, 40, "no wider than 40 m");
+  assert.equal(p.d, 3.4, "at least a bay deep");
+  assert.equal(p.label, "Golf cart parking");
+
+  const old = defaultLayout();
+  old.items = old.items.filter((i) => i.type !== "carpark");
+  // Someone put a stage where the Food Court parking would go: that one is skipped.
+  const food = lot("park_food");
+  old.items.push({ id: "my_stage", type: "stage", variant: "side", x: food.x, z: food.z, rot: 0, label: "Mine", genre: "" });
+  const added = addMissingParking(old);
+  assert.ok(added.includes("park_wheel") && added.includes("park_main"));
+  assert.ok(!added.includes("park_food"), "not on top of the new stage");
+  assert.deepEqual(addMissingParking(old), [], "only once");
+  assert.ok(sanitizeLayout(old).layout.items.some((i) => i.type === "carpark"));
+});

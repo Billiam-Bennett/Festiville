@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sanitizeLayout, defaultLayout, LAYOUT_VERSION } from "../shared/layout.js";
+import { sanitizeLayout, defaultLayout, addMissingParking, LAYOUT_VERSION } from "../shared/layout.js";
 import { applyLayout } from "../shared/venue.js";
 import { GIVERS, AMBIENT } from "../shared/quests-data.js";
 
@@ -45,6 +45,9 @@ export class LayoutStore {
     }
     const out = saved ? sanitizeLayout(saved.layout, layoutRules()) : null;
     this.layout = out?.layout ?? defaultLayout();
+    // Saved before golf cart parking existed: add the default parking spots (not saved until the next edit).
+    const parking = saved ? addMissingParking(this.layout) : [];
+    if (parking.length) console.log(`Added golf cart parking to the saved festival layout: ${parking.join(", ")}. Move or remove them in the festival builder.`);
     this.updatedAt = saved?.updatedAt ?? null;
     this.updatedBy = saved?.updatedBy ?? null;
     applyLayout(this.layout);
