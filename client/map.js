@@ -66,6 +66,7 @@ export function drawMap(ctx, view, data, layout = LAYOUT, vendors = VENDORS) {
     else if (it.type === "tree" && view.trees !== false) dot(ctx, X(it.x), Z(it.z), Math.max(1.5, 2.2 * scale), "#1f4d2b");
     else if (it.type === "arch") rotRect(it, [it.w, 0.8], it.color);
     else if (it.type === "stop") dot(ctx, X(it.x), Z(it.z), Math.max(3.5, scale * 1.1), "#ffd36b", "#2a1a05");
+    else if (it.type === "carpark") rotRect(it, [it.w, it.d], "#2d6cdb");
     else if (it.type === "art") rotRect(it, TYPES.art.size(it), it.variant === "medic" ? "#e53935" : it.variant === "info" ? "#2d9cdb" : C.art);
     else if (it.type === "wheel") {
       // The Ferris wheel, seen from above: its footprint and a ring for the wheel itself.
@@ -134,6 +135,7 @@ export function drawMap(ctx, view, data, layout = LAYOUT, vendors = VENDORS) {
     for (const a of items.filter((i) => i.type === "area" && i.label)) place([[a.label, big, "#ffe7c2"]], a.x, a.z - Math.min(a.d, a.w) / 2 + 3);
     for (const w of items.filter((i) => i.type === "water" && i.label)) place([[w.label, big * 0.75, "#bfe3ff"]], w.x + Math.min(w.w * 0.3, 60), w.z);
     for (const st of items.filter((i) => i.type === "stop")) place([[`🚌 ${st.label}`, 11, "#ffd36b"]], st.x, st.z - 3.2);
+    for (const lot of items.filter((i) => i.type === "carpark")) place([["🅿️", 11, "#9cc2ff"]], lot.x, lot.z + lot.d / 2 + 3);
     for (const a of items.filter((i) => i.type === "art" && i.label)) place([[a.label, 11, "#fff"]], a.x, a.z - 3.6);
     // Stall names once there's room for them, on the side away from the counter.
     if (scale >= 5) for (const v of vendors) place([[v.name, 11]], v.x - v.facing.x * 4.6, v.z - v.facing.z * 4.4, v.facing.x > 0.5 ? "right" : v.facing.x < -0.5 ? "left" : "center");

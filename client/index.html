@@ -401,6 +401,15 @@
     <div id="sh-list"></div>
     <p class="small">Free, any time you're not on a timed quest.</p>
   </section>
+  <section id="cart-warn" class="card sheet" hidden role="alertdialog" aria-labelledby="cw-title" aria-describedby="cw-text">
+    <h2 id="cw-title">🅿️ No parking here</h2>
+    <p id="cw-text"></p>
+    <p class="small" id="cw-near"></p>
+    <div class="row">
+      <button id="cw-home" type="button">Send it to my camp</button>
+      <button id="cw-keep" class="btn-ghost" type="button">Keep driving</button>
+    </div>
+  </section>
   <section id="ride-card" class="card" hidden aria-live="polite">
     <span>🎡 <b>On the Ferris wheel.</b> <span class="small">Look around with WASD, the arrows or the joystick.</span></span>
     <button id="ride-off" class="btn-sm" type="button">Get off</button>

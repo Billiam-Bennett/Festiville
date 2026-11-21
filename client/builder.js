@@ -112,6 +112,7 @@ function newItem(type, x, z) {
     case "bridge": return { ...base, w: 22, d: 6 };
     case "forest": return { ...base, w: 30, d: 30 };
     case "wheel": return { ...base, label: "Ferris Wheel" };
+    case "carpark": return { ...base, w: 9.6, d: 5, label: "Golf cart parking" };   // 4 bays
     case "art": return { ...base, variant: "totem", label: "" };
     default: return base;
   }

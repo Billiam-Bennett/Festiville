@@ -67,6 +67,7 @@ export function buildFestival(THREE, scene, layout = LAYOUT, vendors = VENDORS) 
       case "wheel": obj = ferrisWheel(THREE, it); wheel = obj.userData; ticks.push(wheel.update); break;
       case "art": obj = art(THREE, it); if (obj.userData.tick) ticks.push(obj.userData.tick); break;
       case "stop": obj = shuttleStop(THREE, it); break;
+      case "carpark": obj = cartParking(THREE, it); break;
       case "stall": {
         const v = byVendor.get(it.vendor);
         if (!v) break;
@@ -579,6 +580,30 @@ function shuttleStop(THREE, it) {
   bench.position.set(0.3, 0.45, -0.4);
   g.add(post, sign, bench);
   for (const x of [-0.6, 1.2]) { const leg = box(THREE, 0.08, 0.45, 0.4, "#555"); leg.position.set(x, 0.22, -0.4); g.add(leg); }
+  return g;
+}
+
+// ---------- Golf cart parking ----------
+// A paved pad with a white line between bays and a blue P sign at the back (shared/rides.js → CART_PARKING).
+function cartParking(THREE, it) {
+  const g = new THREE.Group();
+  const pad = new THREE.Mesh(new THREE.PlaneGeometry(it.w, it.d), new THREE.MeshStandardMaterial({ color: "#4a4a52", map: groundTexture(THREE, "dirt", it.w, it.d) }));
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.y = 0.03;
+  g.add(pad);
+  const bays = Math.max(1, Math.floor(it.w / 2.4)), bw = 2.4, x0 = -(bays * bw) / 2;
+  const line = new THREE.MeshBasicMaterial({ color: "#e8e8e8" });
+  for (let k = 0; k <= bays; k++) {
+    const l = new THREE.Mesh(new THREE.PlaneGeometry(0.1, it.d * 0.8), line);
+    l.rotation.x = -Math.PI / 2;
+    l.position.set(x0 + k * bw, 0.035, -it.d * 0.1);
+    g.add(l);
+  }
+  const post = box(THREE, 0.1, 2.4, 0.1, "#c9c9d4");
+  post.position.set(it.w / 2 - 0.3, 1.2, -it.d / 2 - 0.2);
+  const sign = signBoard(THREE, "🅿️ Golf carts", 2.2, 0.55, "#2d6cdb");
+  sign.position.set(it.w / 2 - 0.3, 2.2, -it.d / 2 - 0.15);
+  g.add(post, sign);
   return g;
 }
 

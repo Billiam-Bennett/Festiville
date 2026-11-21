@@ -36,7 +36,8 @@ Go through these in any order. For each one, note anything that looks wrong, fee
 
 **Rides**
 - [ ] Ride the 🎡 Ferris wheel by the First Aid tent. Look around from the top. Is it slow and smooth? Is the view good?
-- [ ] Premium only: drive the 🛺 golf cart. Is it faster than running? Does your character sit properly? Park it and check it goes back to your camp.
+- [ ] Premium only: drive the 🛺 golf cart. Is it faster than running? Does your character sit properly?
+- [ ] Premium only: drive into 🅿️ golf cart parking (by the Ferris wheel, for one) and tap **Park here**. Does the cart stay, and can you get back in? Then try stepping out somewhere else: you should get a warning, and the cart goes back to your camp.
 
 **Quests**
 - [ ] Talk to someone with a yellow **!** above them and do a quest. Try Sunny's "Get Weird Run" (sponsored by Hippie Dips) and one of the timed ones (Vendor Rush or Soundcheck).

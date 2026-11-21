@@ -1,8 +1,8 @@
 // Rides in the browser: the Ferris wheel (get on, ride round, the view over the whole festival from up
-// top), the golf cart (🛺 to drive and park; everyone sees who's in a cart; parked carts wait at their
-// owner's camp) and the shuttle between the sections. The server decides all of it (server/rides.js);
+// top), the golf cart (🛺 to drive and step out; everyone sees who's in a cart; a cart waits at its
+// owner's camp, or for a while in golf cart parking 🅿️) and the shuttle between the sections. The server decides all of it (server/rides.js);
 // this file only shows it and asks.
-import { WHEEL, wheelOf, onWheel, rideGondola, gondolaPos, fromBottom, boardPoint, stopsOf, stopAt } from "../shared/rides.js";
+import { WHEEL, wheelOf, onWheel, rideGondola, gondolaPos, fromBottom, boardPoint, stopsOf, stopAt, parkingFor, nearestLot, decodeParked, cartSolids } from "../shared/rides.js";
 import { parkedCartSpot, campSolids } from "../shared/camps.js";
 import { setSolids } from "../shared/sim.js";
 import { LAYOUT } from "../shared/venue.js";
@@ -32,8 +32,37 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
   let promptAction = null;
   prompt.onclick = () => promptAction?.();
   $("ride-off").onclick = () => room.send("ride", { action: "off" });
+  // 🛺: get in (or call your cart over). While driving: step out. In golf cart parking the cart stays
+  // there; anywhere else it goes back to your camp, so ask first.
   const cartBtn = $("cart-btn");
-  cartBtn.onclick = () => room.send("cart", me()?.ride !== "cart");
+  const parkHere = () => { const p = me(); return p ? parkingFor(LAYOUT.items, p, takenBays()) : { error: "restricted" }; };
+  cartBtn.onclick = () => {
+    const p = me();
+    if (!p) return;
+    if (p.ride !== "cart") { room.send("cart", { on: true }); return; }
+    const spot = parkHere();
+    if (!spot.error) { room.send("cart", { on: false, stay: true }); return; }
+    warnNoParking(spot);
+  };
+  function warnNoParking(spot) {
+    const p = me(), near = nearestLot(LAYOUT.items, p);
+    $("cw-title").textContent = spot.error === "full" ? `🅿️ ${spot.lot.label} is full` : "🅿️ No golf cart parking here";
+    $("cw-text").textContent = `Golf carts can only be left in golf cart parking. If you step out here, your cart goes back to your camp.`;
+    $("cw-near").textContent = near && !(spot.error === "full" && near.lot.id === spot.lot.id)
+      ? `Nearest parking: ${near.lot.label}, ${near.dist} m ${near.dir}.` : "";
+    $("cw-near").hidden = !$("cw-near").textContent;
+    $("cart-warn").hidden = false;
+    $("cw-keep").focus();
+  }
+  $("cw-home").onclick = () => { $("cart-warn").hidden = true; room.send("cart", { on: false }); };
+  $("cw-keep").onclick = () => ($("cart-warn").hidden = true);
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("cart-warn").hidden) $("cart-warn").hidden = true; });
+  // Bays other players' carts are parked in.
+  function takenBays() {
+    const out = new Set();
+    players().forEach((q, id) => { const pk = id !== myId && decodeParked(q.parked); if (pk) out.add(`${pk.lot}:${pk.bay}`); });
+    return out;
+  }
   $("sh-close").onclick = () => ($("shuttle").hidden = true);
 
   function openShuttle(from) {
@@ -96,6 +125,7 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
   }
   const driving = new Map();   // player id -> { obj, cart } (the avatar we put a cart under)
   const parked = new Map();    // camp id -> mesh
+  const inLots = new Map();    // player id -> { key, mesh }: carts left in golf cart parking
   let campsKey = "";
 
   function syncCarts() {
@@ -120,8 +150,27 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
       driving.delete(id);
     }
 
-    // Parked carts (and what's solid in camps, so walking predicts the same as the server).
-    const names = new Set([...drivers].map((id) => players().get(id)?.name?.toLowerCase()));
+    // Carts left in golf cart parking: drawn where they stand, solid like the server has them.
+    const left = new Map();
+    players().forEach((p, id) => { const pk = decodeParked(p.parked); if (pk) left.set(id, { key: p.parked, pk }); });
+    for (const [id, cur] of inLots) {
+      if (left.get(id)?.key === cur.key) continue;
+      scene.remove(cur.mesh);
+      inLots.delete(id);
+    }
+    for (const [id, { key, pk }] of left) {
+      if (inLots.has(id)) continue;
+      const mesh = cartMesh();
+      mesh.position.set(pk.x, 0, pk.z);
+      mesh.rotation.y = pk.rotY;
+      scene.add(mesh);
+      inLots.set(id, { key, mesh });
+    }
+    setSolids("parked carts", [...left.values()].flatMap(({ pk }) => cartSolids(pk)));
+
+    // Parked carts at camps (and what's solid in camps, so walking predicts the same as the server).
+    // A cart that's out (being driven, or left in parking) isn't at its camp.
+    const names = new Set([...drivers, ...left.keys()].map((id) => players().get(id)?.name?.toLowerCase()));
     const list = camps.all();
     const key = JSON.stringify(list.map((c) => [c.id, c.x, c.z, c.plot, c.items, !!c.cart && !names.has(c.id)]));
     if (key === campsKey) return;
@@ -201,11 +250,20 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
     const owns = hasCart();
     cartBtn.hidden = !owns || riding;
     cartBtn.setAttribute("aria-pressed", String(p.ride === "cart"));
-    cartBtn.title = p.ride === "cart" ? "Park your golf cart (it goes back to your camp)" : "Drive your golf cart";
+    const driving = p.ride === "cart";
+    const spot = driving ? parkHere() : null;
+    const label = !driving ? "Drive your golf cart"
+      : !spot.error ? `Step out and park here (${spot.lot.label})` : "Step out (your cart goes back to your camp)";
+    cartBtn.title = label;
+    cartBtn.setAttribute("aria-label", label);
+    if (!driving) $("cart-warn").hidden = true;
 
     // What you can do where you're standing: get on the wheel, or take the shuttle.
     promptAction = null;
-    if (!riding && p.ride !== "cart") {
+    if (driving && !spot.error) {
+      prompt.textContent = `🅿️ Park here · ${spot.lot.label}`;
+      promptAction = () => room.send("cart", { on: false, stay: true });
+    } else if (!riding && !driving) {
       if (wheel && dist(p, wheel) <= WHEEL.boardRange) {
         prompt.textContent = `🎡 Ride the ${wheel.label || "Ferris wheel"} (free)`;
         promptAction = () => room.send("ride", { action: "board" });
