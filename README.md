@@ -36,7 +36,8 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 | `client/venue-ui.js` | Vendor cards (menu + where they'll be next), waypoints, the minimap, the full map with vendor directory, and fading stalls that block the camera. |
 | `client/controls.js` | WASD/arrows + Shift to run on desktop; touch joystick on phones (push to the edge to run). |
 | `client/multiplayer.js` | Connects to the server, predicts your movement, draws other players smoothly. |
-| `client/character.js` | Loads a character model, gives each player a copy, and plays Idle / Walk / Run / Dance based on how fast they move. |
+| `client/character.js` | Loads a character model, gives each player a copy, blends Idle / Walk / Run by how fast they move (feet planted, leaning into turns), and plays emotes over the top. |
+| `client/motion.js` | The maths of moving: measuring each walk/run clip's stride, blending by speed, leaning into turns, golf cart steering and body roll. |
 | `client/cast.js` | Loads characters on demand and swaps them in when ready. |
 | `shared/characters.js` | **The cast list**: every pickable character, free or premium. |
 | `shared/accessories.js` + `client/accessories.js` | Cosmetic accessories (hats, glasses, glow stick, wings): the list the server validates, and the 3D shapes worn on the character. |
@@ -531,6 +532,10 @@ Quest givers can wear any character too: set `look` on each giver in `shared/que
 - **Collision runs on the server**, in the same `shared/sim.js` the browser uses to predict your moves, so a modified browser can't walk through walls. What's solid comes from the layout (`TYPES[...].solid` in `shared/layout.js`: stages, stalls, tents, tables, the Ferris wheel and art are boxes; trees are their trunks; water is blocked except on a bridge) and from what's set up in camps. You slide along things instead of sticking to them. Players are small circles that gently drift apart (slower than walking, so nobody can be boxed in).
 - Quest rules run only on the server using the server's own positions, so nobody can fake finding an item or standing on a marker.
 - Animations aren't sent over the network. Each browser works out Idle / Walk / Run from how fast a player is moving, so it costs no extra bandwidth. Only the emote is synced (`emote` and `emoteSeq` in `server/schema.js`; see `shared/emotes.js`).
+- **Feet stay planted** (`client/motion.js`). When a character loads, the game measures how fast its Walk and Run clips move the feet (about 1.65 m/s and 3.75 m/s for the shipped clips), then plays the legs exactly as fast as the character really moves, so nobody skates. Walk and Run blend by speed on one shared step cycle, lined up so both plant the left foot together: walking (3 m/s) is a fast walk with a little jog in it, running (6.5 m/s) is all run. The legs never play slower than 0.6× or faster than 1.8× their clip; between those the feet are locked to the ground. Settings are in `GAIT` at the top of the file.
+- Characters **lean into turns** (more when running), take a few steps if they turn on the spot, and turn at the same rate at any frame rate. Someone who jumps across the map (the shuttle, getting off a ride) appears there instead of sliding across.
+- **Golf carts:** the wheels roll as far as the cart goes, the front wheels steer into turns, and the body leans out of turns and rocks back when speeding up and forward when braking (`CART_POSE` in `client/motion.js`).
+- New animation clips work the same way with no settings: export them **In Place** (or with root motion; both measure the same), and the game works out their speed. See the asset list for what to make next.
 
 ## Next
 
