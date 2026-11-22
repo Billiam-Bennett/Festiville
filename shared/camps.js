@@ -13,7 +13,7 @@ export const GAP = 0.6;   // meters kept clear between spots and around tents/tr
 export const campAreas = (items) => items.filter((i) => i.type === "area" && (i.id === "camp" || /camp/i.test(i.label ?? "")));
 
 // Things in the layout a camp can't sit on top of.
-const BLOCKING = new Set(["stage", "stall", "arch", "table", "tent", "tree", "npc", "spot", "lamp"]);
+const BLOCKING = new Set(["stage", "stall", "arch", "table", "tent", "tree", "npc", "spot", "lamp", "path", "water", "bridge", "wheel", "forest"]);
 
 // Axis-aligned box around a (possibly rotated) layout item.
 function boxOf(item) {
@@ -62,7 +62,8 @@ export function campSlots(plotId) {
 export const groundCapacity = (plotId) => Math.max(0, campSlots(plotId).length - 1);
 
 // Clean a requested set of items to set up: owned ones only, one per group, ground items within
-// capacity (in the order asked). Edge items (lights, flags, signs…) don't use space.
+// capacity (in the order asked). Edge items (lights, flags, signs…) don't use space. Items that sit
+// on another one (a flag on the tent, a pot over the fire pit) are dropped if that one isn't set up.
 export function cleanCampItems(requested, owned, plotId) {
   const list = Array.isArray(requested) ? requested : [];
   const out = [], groups = new Set();
@@ -72,8 +73,33 @@ export function cleanCampItems(requested, owned, plotId) {
     const item = campItemById(id);
     if (!item || !owned.includes(id) || out.includes(id)) continue;
     if (item.group) { if (groups.has(item.group)) continue; groups.add(item.group); }
-    else if (item.place === "ground") { if (ground >= cap) continue; ground++; }
+    if (item.place === "ground" && item.group !== "tent") { if (ground >= cap) { if (item.group) groups.delete(item.group); continue; } ground++; }
     out.push(id);
+  }
+  const has = (what) => out.some((id) => id === what || campItemById(id).group === what);
+  return out.filter((id) => { const on = campItemById(id).on; return !on || has(on); });
+}
+
+// What's solid in a camp (shared/sim.js): the tent and each ground item, as circles where they stand.
+// The grass of the spot itself stays walkable, so friends can come and sit at your camp.
+// A parked golf cart: just in front of the camp, beside the owner's stake.
+export function parkedCartSpot(camp) {
+  const plot = plotById(camp.plot);
+  return plot ? { x: camp.x + plot.w / 2 - 1.1, z: camp.z + plot.d / 2 + 1.4 } : null;
+}
+
+// cart: is the owner's golf cart parked there right now (not while they're driving it).
+export function campSolids(camp, { cart = !!camp.cart } = {}) {
+  const slots = campSlots(camp.plot);
+  const out = [];
+  const park = cart ? parkedCartSpot(camp) : null;
+  if (park) out.push({ x: park.x, z: park.z, r: 0.9 });
+  let next = 1;
+  for (const id of camp.items ?? []) {
+    const item = campItemById(id);
+    if (item?.place !== "ground") continue;
+    const s = item.group === "tent" ? slots[0] : slots[next++];
+    if (s) out.push({ x: camp.x + s.x, z: camp.z + s.z, r: item.group === "tent" ? 1.0 : 0.55 });
   }
   return out;
 }

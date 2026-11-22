@@ -6,6 +6,14 @@ import {
   CREW_MAX, TALK_RANGE, PICKUP_RANGE, INVITE_TTL,
   QUESTS, LOST_SPOTS, CAMP_TENTS, giverById, dist,
 } from "../shared/quests-data.js";
+import { vendorById, vendorFront } from "../shared/venue.js";
+
+// Where a business quest ends: a few steps in front of the sponsor's stall, or null if that stall
+// isn't on the map right now.
+function sponsorSpot(q) {
+  const v = vendorById(q.sponsor?.stall);
+  return v ? vendorFront(v) : null;
+}
 
 export class QuestSystem {
   constructor({ rng = Math.random } = {}) {
@@ -89,10 +97,12 @@ export class QuestSystem {
     let blocked = "";
     if (crew?.quest) blocked = `Your crew is already on "${QUESTS[crew.quest.id].name}".`;
     else if (size < q.minCrew) blocked = `You need a crew of at least ${q.minCrew}. Tap another player to invite them.`;
+    else if (q.type === "business" && !sponsorSpot(q)) blocked = `${q.sponsor.name} isn't set up at the festival right now. Check back later.`;
     this.emit(id, {
       type: "offer", giverId, questId: g.quest, giverName: g.name, name: q.name,
       pitch: q.pitch, howTo: q.howTo, badge: q.badge, crewSize: size,
       done: p.badges.has(q.badge), blocked,
+      ...(q.sponsor ? { sponsor: { name: q.sponsor.name, message: q.sponsor.message, link: q.sponsor.link ?? "" } } : {}),
     });
   }
 
@@ -105,6 +115,8 @@ export class QuestSystem {
     const existing = p.crewId ? this.crews.get(p.crewId) : null;
     if (existing?.quest) return this.err(id, `Your crew is already on "${QUESTS[existing.quest.id].name}".`);
     if ((existing?.members.length ?? 1) < q.minCrew) return this.err(id, `${q.name} needs a crew of at least ${q.minCrew}. Tap another player to invite them.`);
+    const spot = q.type === "business" ? sponsorSpot(q) : null;
+    if (q.type === "business" && !spot) return this.err(id, `${q.sponsor.name} isn't set up at the festival right now. Check back later.`);
     const crew = existing ?? this.createCrew(id, { temp: true });
 
     const quest = { id: g.quest, startedBy: id, endsAt: q.timeLimit ? now + q.timeLimit : 0 };
@@ -117,6 +129,7 @@ export class QuestSystem {
       const n = Math.min(q.ordersBase + crew.members.length - 1, CAMP_TENTS.length);
       quest.orders = this.pick(CAMP_TENTS, n).map((t, i) => ({ id: i, x: t.x, z: t.z, state: "waiting", carrier: "" }));
     }
+    if (q.type === "business") Object.assign(quest, { stage: "go", hold: 0, x: spot.x, z: spot.z });
     crew.quest = quest;
     this.emitCrew(crew, { type: "questStart", questId: g.quest, name: q.name, by: p.name });
   }
@@ -125,6 +138,19 @@ export class QuestSystem {
     const crew = this.crews.get(this.players.get(id)?.crewId);
     if (!crew?.quest) return;
     this.finish(crew, false, `${this.players.get(id).name} ended the quest.`);
+  }
+
+  // Business quests: someone in the crew talks to the vendor at the sponsor's stall.
+  vendorTalk(id, positions) {
+    const crew = this.crews.get(this.players.get(id)?.crewId);
+    const quest = crew?.quest, q = quest && QUESTS[quest.id];
+    if (!q || q.type !== "business") return;
+    const pos = positions.get(id);
+    if (!pos || dist(pos, quest) > q.task.range) return this.err(id, `Get a little closer to the ${q.sponsor.name} stall to talk.`);
+    if (quest.stage === "task") return;
+    quest.stage = "task";
+    quest.hold = 0;
+    this.emitCrew(crew, { type: "sponsorTalk", questId: quest.id, sponsor: q.sponsor.name, line: q.vendorLine, message: q.sponsor.message, task: q.task.label, by: this.name(id) });
   }
 
   // ---------- every server tick ----------
@@ -139,7 +165,21 @@ export class QuestSystem {
       if (quest.id === "lostfound") this.tickLostFound(crew, quest, q, members);
       if (quest.id === "soundcheck") this.tickSoundcheck(crew, quest, q, members, dt);
       if (quest.id === "vendorrush") this.tickVendorRush(crew, quest, q, members);
+      if (q.type === "business") this.tickBusiness(crew, quest, q, members, dt);
     }
+  }
+
+  // Walk to the sponsor's stall ("go"), talk to the vendor ("talk", see vendorTalk), then do the task
+  // there: someone from the crew stays at the counter for task.holdSeconds ("task").
+  tickBusiness(crew, quest, q, members, dt) {
+    const there = members.filter((m) => dist(m, quest) <= q.task.range);
+    if (quest.stage === "go" && there.length) {
+      quest.stage = "talk";
+      this.emitCrew(crew, { type: "toast", text: `${this.name(there[0].id)} made it to ${q.sponsor.name}. Talk to them at the counter.` });
+    }
+    if (quest.stage !== "task") return;
+    quest.hold = there.length ? quest.hold + dt : 0;
+    if (quest.hold >= q.task.holdSeconds) this.finish(crew, true);
   }
 
   tickLostFound(crew, quest, q, members) {
@@ -232,6 +272,7 @@ export class QuestSystem {
     if (quest.items) { out.items = quest.items; out.stage = quest.stage; }
     if (quest.id === "soundcheck") { out.hold = +quest.hold.toFixed(1); out.onMain = quest.onMain ?? []; out.onSide = quest.onSide ?? []; }
     if (quest.orders) out.orders = quest.orders;
+    if (QUESTS[quest.id].type === "business") Object.assign(out, { stage: quest.stage, hold: +quest.hold.toFixed(1), x: quest.x, z: quest.z });
     return JSON.stringify(out);
   }
 }
