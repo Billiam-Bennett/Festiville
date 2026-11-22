@@ -7,6 +7,7 @@ import { parkedCartSpot, campSolids } from "../shared/camps.js";
 import { setSolids } from "../shared/sim.js";
 import { LAYOUT } from "../shared/venue.js";
 import { CABIN_FLOOR } from "./world.js";
+import { CART_POSE, cartPose, ease, wrapAngle } from "./motion.js";
 
 // Where up to four riders sit in a cabin (meters, in the wheel's own frame): two on the back bench
 // facing out over the festival, two on the front bench facing them. [x, z, turn]
@@ -100,11 +101,18 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
 
   // ---------- Golf carts ----------
   // A cart is built around its driver (the avatar sits in it); a parked one waits at the camp.
+  // The body (everything but the wheels) hangs on its own pivot at axle height so it can roll and pitch
+  // over the wheels; each wheel can spin, and the front two steer (client/motion.js cartPose).
+  const AXLE = CART_POSE.wheelRadius;
   function cartMesh(color = "#f4f1ea") {
     const g = new THREE.Group();
+    const body = new THREE.Group();
+    body.position.y = AXLE;
+    g.add(body);
     const mat = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, ...o });
     const gold = mat("#ffd36b", { metalness: 0.6, roughness: 0.3, emissive: "#6b4e00", emissiveIntensity: 0.4 });
-    const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o; };
+    // Body parts are placed by their height above the ground, like the rest of the world.
+    const add = (geo, m, x, y, z, to = body) => { const o = new THREE.Mesh(geo, m); o.position.set(x, to === body ? y - AXLE : y, z); to.add(o); return o; };
     add(new THREE.BoxGeometry(1.3, 0.45, 2.3), mat(color), 0, 0.5, 0);
     add(new THREE.BoxGeometry(1.32, 0.08, 2.32), gold, 0, 0.74, 0);                       // gold trim: it's premium
     add(new THREE.BoxGeometry(1.2, 0.5, 0.15), mat("#2a1b3d"), 0, 0.98, -0.45);            // seat back
@@ -115,14 +123,55 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
     add(new THREE.BoxGeometry(1.25, 0.06, 1.7), mat(color), 0, 2.05, -0.05);               // roof
     for (const [x, z] of [[-0.6, 0.75], [0.6, 0.75], [-0.6, -0.85], [0.6, -0.85]]) add(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 6), mat("#ccc"), x, 1.4, z);
     add(new THREE.PlaneGeometry(1.15, 0.7), mat("#bfe3ff", { transparent: true, opacity: 0.35, side: THREE.DoubleSide }), 0, 1.45, 0.78).rotation.x = -0.2;
-    for (const [x, z] of [[-0.62, 0.75], [0.62, 0.75], [-0.62, -0.75], [0.62, -0.75]]) {
-      add(new THREE.CylinderGeometry(0.26, 0.26, 0.18, 14), mat("#1a1a1a"), x, 0.26, z).rotation.z = Math.PI / 2;
-    }
     const flag = add(new THREE.PlaneGeometry(0.35, 0.22), gold, 0.5, 2.45, -0.8);
     flag.material = gold; flag.material.side = THREE.DoubleSide;
     add(new THREE.CylinderGeometry(0.012, 0.012, 0.5, 4), mat("#ccc"), 0.32, 2.3, -0.8);
+    // Wheels: pivot (steers about up) → spinner (rolls about the axle) → tyre, hub and two spokes,
+    // so you can see them turn.
+    const tyre = mat("#1a1a1a", { roughness: 0.9 }), hub = mat("#c9c9c9", { metalness: 0.5, roughness: 0.35 });
+    const wheels = [];
+    for (const [x, z] of [[-0.62, 0.75], [0.62, 0.75], [-0.62, -0.75], [0.62, -0.75]]) {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, AXLE, z);
+      const spin = new THREE.Group();
+      pivot.add(spin);
+      const out = Math.sign(x);   // which side faces out
+      add(new THREE.CylinderGeometry(AXLE, AXLE, 0.18, 16), tyre, 0, 0, 0, spin).rotation.z = Math.PI / 2;
+      add(new THREE.CylinderGeometry(0.14, 0.14, 0.03, 12), hub, out * 0.09, 0, 0, spin).rotation.z = Math.PI / 2;
+      for (const turn of [0, Math.PI / 2]) add(new THREE.BoxGeometry(0.02, 0.36, 0.05), hub, out * 0.1, 0, 0, spin).rotation.x = turn;
+      g.add(pivot);
+      wheels.push({ pivot, spin, front: z > 0 });
+    }
+    g.userData.parts = { body, wheels };
     return g;
   }
+  // Every frame: wheels roll as far as the cart went, the front ones steer into the turn, and the body
+  // leans out of turns and rocks with speeding up and braking.
+  function driveCart(d, dt) {
+    const { obj, cart } = d, parts = cart.userData.parts;
+    if (!parts || !(dt > 0)) return;
+    const x = obj.position.x, z = obj.position.z, yaw = obj.rotation.y;
+    if (!d.last) d.last = { x, z, yaw, v: 0, turn: 0, accel: 0 };
+    const L = d.last;
+    const moved = Math.hypot(x - L.x, z - L.z);
+    const jumped = moved > 5;   // a snap from the server, not driving
+    // Forward or backward along the cart's own nose.
+    const sign = Math.sin(yaw) * (x - L.x) + Math.cos(yaw) * (z - L.z) < 0 ? -1 : 1;
+    const v = jumped ? L.v : (sign * moved) / dt;
+    const smoothV = ease(L.v, v, 10, dt);
+    L.accel = ease(L.accel, (smoothV - L.v) / dt, 6, dt);
+    L.turn = ease(L.turn, wrapAngle(yaw - L.yaw) / dt, 8, dt);
+    L.v = smoothV;
+    Object.assign(L, { x, z, yaw });
+    const pose = cartPose(Math.abs(L.v), L.turn, L.accel);
+    for (const w of parts.wheels) {
+      if (!jumped) w.spin.rotation.x = (w.spin.rotation.x + (sign * moved) / AXLE) % (Math.PI * 2);
+      if (w.front) w.pivot.rotation.y = ease(w.pivot.rotation.y, pose.steer, 12, dt);
+    }
+    parts.body.rotation.z = ease(parts.body.rotation.z, pose.roll, 6, dt);
+    parts.body.rotation.x = ease(parts.body.rotation.x, pose.pitch, 6, dt);
+  }
+  const animateCarts = (dt) => { for (const d of driving.values()) driveCart(d, dt); };
   const driving = new Map();   // player id -> { obj, cart } (the avatar we put a cart under)
   const parked = new Map();    // camp id -> mesh
   const inLots = new Map();    // player id -> { key, mesh }: carts left in golf cart parking
@@ -196,6 +245,7 @@ export function setupRides({ THREE, scene, mp, rig, festival, getInput, toast, c
     const st = room.state.time ?? 0;
     t = Math.abs(st - t) > 1 ? st : t + dt + (st - t) * Math.min(1, dt * 2);
     festival.update?.(t);
+    animateCarts(dt);
     const p = me();
     if (!p) return;
 
