@@ -30,13 +30,16 @@ import { onWheel } from "../shared/rides.js";
 const SNAP_DISTANCE = 3;      // if we're this far off from the server, teleport instead of smoothing
 const CORRECTION = 0.15;      // how quickly the local player eases toward the server's position
 const REMOTE_SMOOTHING = 12;  // higher = remote players follow their server position more tightly
+const REMOTE_SNAP = 12;       // a remote player this far from where we show them jumped (the shuttle,
+                              // getting off a ride): put them there rather than sliding them across the map
 const TURN_SPEED = 12;        // how quickly characters turn to face where they're going
 
-// Turn smoothly toward an angle, taking the short way around.
+// Turn smoothly toward an angle, taking the short way around (the same at any frame rate). Keeps the
+// angle between -π and π so it never winds up.
 function turnToward(obj, target, dt) {
-  let d = target - obj.rotation.y;
-  d = Math.atan2(Math.sin(d), Math.cos(d));
-  obj.rotation.y += d * Math.min(1, TURN_SPEED * dt);
+  const d = Math.atan2(Math.sin(target - obj.rotation.y), Math.cos(target - obj.rotation.y));
+  const r = obj.rotation.y + d * (1 - Math.exp(-TURN_SPEED * dt));
+  obj.rotation.y = Math.atan2(Math.sin(r), Math.cos(r));
 }
 
 export async function connectMultiplayer({ url, THREE, scene, localObject, getInput, profile = {}, createRemoteAvatar, onLocalRebuilt }) {
@@ -89,10 +92,11 @@ export async function connectMultiplayer({ url, THREE, scene, localObject, getIn
       localObject = next;
       onLocalRebuilt?.(next);
     }
+    let jumped = false;
     if (me) {
       const dx = me.x - local.x, dz = me.z - local.z;
       if (!placedFromServer || Math.hypot(dx, dz) > SNAP_DISTANCE) {
-        local.x = me.x; local.z = me.z; placedFromServer = true;
+        local.x = me.x; local.z = me.z; placedFromServer = true; jumped = true;
       } else {
         local.x += dx * CORRECTION; local.z += dz * CORRECTION;
       }
@@ -100,7 +104,7 @@ export async function connectMultiplayer({ url, THREE, scene, localObject, getIn
     localObject.position.x = local.x;
     localObject.position.z = local.z;
     turnToward(localObject, local.rotY, dt);
-    const mySpeed = dt > 0 ? Math.hypot(local.x - lastLocal.x, local.z - lastLocal.z) / dt : 0;
+    const mySpeed = dt > 0 && !jumped ? Math.hypot(local.x - lastLocal.x, local.z - lastLocal.z) / dt : 0;
     lastLocal.x = local.x; lastLocal.z = local.z;
     localObject.userData.animate?.(dt, mySpeed, me?.emote, me?.emoteSeq);
 
@@ -129,10 +133,11 @@ export async function connectMultiplayer({ url, THREE, scene, localObject, getIn
       r.target.x = p.x; r.target.z = p.z; r.target.rotY = p.rotY;
       const k = 1 - Math.exp(-REMOTE_SMOOTHING * dt);   // frame-rate-independent smoothing
       const ox = r.object.position.x, oz = r.object.position.z;
-      r.object.position.x += (r.target.x - ox) * k;
-      r.object.position.z += (r.target.z - oz) * k;
+      const far = Math.hypot(r.target.x - ox, r.target.z - oz) > REMOTE_SNAP;
+      r.object.position.x = far ? r.target.x : ox + (r.target.x - ox) * k;
+      r.object.position.z = far ? r.target.z : oz + (r.target.z - oz) * k;
       turnToward(r.object, r.target.rotY, dt);
-      const speed = dt > 0 ? Math.hypot(r.object.position.x - ox, r.object.position.z - oz) / dt : 0;
+      const speed = dt > 0 && !far ? Math.hypot(r.object.position.x - ox, r.object.position.z - oz) / dt : 0;
       r.object.userData.animate?.(dt, speed, p.emote, p.emoteSeq);
     });
 
