@@ -469,15 +469,16 @@ Plus a domain name (~$12/year) if you want `play.yourfestival.com` instead of an
 
 1. **Make a server.** At your host, create an Ubuntu 24.04 server (2 GB RAM is plenty to start). Pick the region closest to most players (e.g. US East).
 2. **Point a domain at it.** In your domain's DNS settings, add an **A record** like `play` → the server's IP address.
-3. **Install Docker on it.** Log in (`ssh root@<server IP>`) and run: `curl -fsSL https://get.docker.com | sh`
-4. **Copy the game there.** From your PC, in the folder above festiville: `scp -r festiville root@<server IP>:/opt/` (or upload it with WinSCP, or push it to GitHub and `git clone`). Don't copy `node_modules`.
-5. **Start it:**
+3. **Copy the game there.** Log in (`ssh root@<server IP>`) and `git clone` the repository into `/opt/festiville`. Or, from your PC in the folder above festiville: `scp -r festiville root@<server IP>:/opt/` (or WinSCP). Don't copy `node_modules` or `data`.
+4. **Start it with one command:**
    ```bash
    cd /opt/festiville
-   echo DOMAIN=play.yourfestival.com > deploy/.env
-   docker compose -f deploy/docker-compose.yml up -d --build
+   ./deploy/setup-server.sh play.yourfestival.com
    ```
-6. **Open `https://play.yourfestival.com`.** The first load can take a minute while the HTTPS certificate is issued.
+   It installs Docker if needed, saves your domain in `deploy/.env`, builds and starts the game behind Caddy (automatic HTTPS), waits until the game answers, and sets up a daily backup (04:17 server time, keeping the newest 14). It's safe to run again.
+5. **Open `https://play.yourfestival.com`.** The first load can take a minute while the HTTPS certificate is issued. Sign up in the game, then make yourself the organizer: `./deploy/account.sh make-admin <you>`.
+
+(The manual way, if you prefer: install Docker with `curl -fsSL https://get.docker.com | sh`, run `echo DOMAIN=play.yourfestival.com > deploy/.env`, then `docker compose -f deploy/docker-compose.yml up -d --build`.)
 
 **Running things on the hosted server** (from `/opt/festiville`):
 
@@ -489,7 +490,7 @@ Plus a domain name (~$12/year) if you want `play.yourfestival.com` instead of an
 docker compose -f deploy/docker-compose.yml logs -f festiville    # watch the server log
 ```
 
-**Updating:** copy the new files over, then run the `up -d --build` line again. Players' data lives in a Docker volume and isn't touched. **Back up** with `backup.sh` regularly and keep the copies somewhere else.
+**Updating:** copy the new files over (or `git pull`), then run `./deploy/setup-server.sh <your domain>` again (or the `up -d --build` line). Players' data lives in a Docker volume and isn't touched. **Back up** with `backup.sh` regularly and keep the copies somewhere else.
 
 **Health check:** `https://your-domain/api/health` shows players online, rooms, memory, and how long game ticks take. Once a minute the server log also prints a `[stats]` line while people are playing.
 
@@ -501,7 +502,7 @@ npm run loadtest -- 200                       # from another terminal: 200 fake 
 npm run loadtest -- 500 wss://play.yourfestival.com    # against the hosted server
 ```
 
-Fake players (`lt_0001`, `lt_0002`, …) join, walk around and chat. Every 5 seconds it prints the response time (key press → server confirms the move; under 150 ms feels fine), updates per second (should stay near 20), and the server's tick time (fine under ~25 ms of its 50 ms budget). At the end it says whether the server coped. Past ~300 fake players, run the load test from a second computer so your own machine isn't the bottleneck. For the hosted test, `deploy/setup-server.sh` already raises the sign-up limit; afterwards set `FV_SIGNUPS_PER_HOUR=` (empty) in `deploy/.env` and run the `up -d` line again to go back to the default.
+Fake players (`lt_0001`, `lt_0002`, …) join, walk around and chat. Every 5 seconds it prints the response time (key press → server confirms the move; under 150 ms feels fine), updates per second (should stay near 20), and the server's tick time (fine under ~25 ms of its 50 ms budget). At the end it says whether the server coped. Past ~300 fake players, run the load test from a second computer so your own machine isn't the bottleneck. For the hosted test, run `./deploy/setup-server.sh <your domain> --loadtest` first to lift the sign-up limit; afterwards run it again without `--loadtest` to go back to the default.
 
 ### Growing to 1,000+ players at once
 
