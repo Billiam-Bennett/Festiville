@@ -92,6 +92,7 @@ export function rigAvatar(THREE, model, clips, profile = {}, height = TARGET_HEI
     const bone = a && bones[SLOT_BONE[a.slot]];
     if (!a || !bone) continue;
     root.add(a.group);
+    a.group.userData.accessory = a;   // lets client/avatar.js fit hats over big hair (it adjusts a.offset)
     worn.push({ ...a, bone });
   }
   function placeAccessories(dt) {

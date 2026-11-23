@@ -15,7 +15,8 @@
     "account": "node scripts/account.mjs",
     "loadtest": "node scripts/loadtest.mjs",
     "layout": "node scripts/layout.mjs",
-    "app": "npm --prefix desktop start"
+    "app": "npm --prefix desktop start",
+    "bench": "node scripts/bench-crowd.mjs"
   },
   "engines": {
     "node": ">=20"
