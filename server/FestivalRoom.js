@@ -237,7 +237,7 @@ export class FestivalRoom extends Room {
     client.send("wallet", { credits: store.balance(a), unlocks: [...a.unlocks], campItems: store.campItems(a), camp: campStore().public(a.id) });
   }
 
-  handleCamp(client, { action, plot, items }) {
+  handleCamp(client, { action, plot, items, style }) {
     const a = this.account(client.sessionId);
     const p = this.state.players.get(client.sessionId);
     if (!a || !p) return;
@@ -274,6 +274,9 @@ export class FestivalRoom extends Room {
       say("Camp moved here.");
     } else if (action === "setup") {
       const out = camps.setItems(a.id, items, owned);
+      if (out.error) return say(out.error, true);
+    } else if (action === "music") {
+      const out = camps.setMusic(a.id, typeof style === "string" ? style : "");
       if (out.error) return say(out.error, true);
     } else if (action === "release") {
       if (!camps.release(a.id)) return say("You don't have a camp.", true);

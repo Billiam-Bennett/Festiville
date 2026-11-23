@@ -1,11 +1,12 @@
 // Player camps in the Campground: draws every camp (spot outline, owner stake, and the items set up in
 // it) and keeps them in sync with the server. Also draws the "would my spot fit here?" preview
-// while the Camp tab of the shop is open.
+// while the Camp tab of the shop is open, and plays each PA system's music (client/camp-music.js).
 //
 // Each item is built from simple shapes in meters (like client/accessories.js). Where items stand
 // comes from shared/camps.js (campSlots), so a camp looks the same on every screen.
 import { plotById, campItemById } from "../shared/economy.js";
-import { campSlots, snap } from "../shared/camps.js";
+import { campSlots, snap, DEFAULT_MUSIC } from "../shared/camps.js";
+import { createCampSound } from "./camp-music.js";
 
 const std = (THREE, color, o = {}) => new THREE.MeshStandardMaterial({ color, ...o });
 const glow = (THREE, color, k = 1) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: k });
@@ -33,7 +34,7 @@ function textTexture(THREE, text, { w = 512, h = 128, color = "#fff", bg = "rgba
 // ---------- Items ----------
 // Each returns a Group standing on y=0 at its own origin (facing +z, the front of the camp).
 // g.userData.tick(dt, t) animates it if present.
-function buildItem(THREE, id, camp, plot) {
+function buildItem(THREE, id, camp, plot, opts = {}) {
   const g = new THREE.Group();
   const add = (m, x = 0, y = 0, z = 0) => { m.position.set(x, y, z); g.add(m); return m; };
   const col = ownerColor(camp.owner);
@@ -87,7 +88,7 @@ function buildItem(THREE, id, camp, plot) {
       break;
     }
     case "pa": {
-      // Two speaker stacks that thump to an imaginary beat.
+      // Two speaker stacks that thump on the beat of the music this PA plays (opts.pulse).
       const cones = [];
       for (const x of [-0.42, 0.42]) {
         add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 0.45), std(THREE, "#16161c")), x, 0.55, 0);
@@ -97,7 +98,11 @@ function buildItem(THREE, id, camp, plot) {
         }
       }
       add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.3), glow(THREE, "#5ad1ff", 0.8)), 0, 0.05, 0.3);   // mixer glow
-      g.userData.tick = (dt, t) => { const k = 1 + Math.max(0, Math.sin(t * Math.PI * 4)) * 0.12; for (const c of cones) { c.scale.setScalar(k); c.material.emissiveIntensity = (k - 1) * 4; } };
+      g.userData.tick = (dt, t) => {
+        const p = opts.pulse ? opts.pulse(t) : Math.max(0, Math.sin(t * Math.PI * 4));
+        const k = 1 + p * 0.12;
+        for (const c of cones) { c.scale.setScalar(k); c.material.emissiveIntensity = p * 0.5; }
+      };
       break;
     }
     case "lights": {
@@ -172,7 +177,7 @@ function buildItem(THREE, id, camp, plot) {
 }
 
 // ---------- A whole camp ----------
-function buildCamp(THREE, camp) {
+function buildCamp(THREE, camp, opts = {}) {
   const plot = plotById(camp.plot);
   const root = new THREE.Group();
   root.position.set(camp.x, 0, camp.z);
@@ -198,12 +203,13 @@ function buildCamp(THREE, camp) {
   for (const id of camp.items ?? []) {
     const item = campItemById(id);
     if (!item) continue;
-    const obj = buildItem(THREE, id, camp, plot);
+    const obj = buildItem(THREE, id, camp, plot, opts);
     if (!obj) continue;
     if (item.place === "ground") {
       const s = item.group === "tent" ? slots[0] : slots[next++];
       if (!s) continue;
       obj.position.set(s.x, 0, s.z);
+      if (id === "pa") root.userData.pa = { x: camp.x + s.x, z: camp.z + s.z };   // where its music comes from
     }
     root.add(obj);
     if (obj.userData.tick) ticks.push(obj.userData.tick);
@@ -212,10 +218,13 @@ function buildCamp(THREE, camp) {
   return root;
 }
 
-export function setupCamps({ THREE, scene, mp }) {
+// listener: a THREE.AudioListener on the camera, for PA music (leave it out for silent camps).
+export function setupCamps({ THREE, scene, mp, listener }) {
   const room = mp.room;
   const group = new THREE.Group();
   scene.add(group);
+  const sound = listener ? createCampSound(THREE, listener) : null;
+  if (sound) scene.add(sound.root);
   const camps = new Map();   // public id -> { data, obj }
   const listeners = new Set();
   let t = 0;
@@ -224,10 +233,13 @@ export function setupCamps({ THREE, scene, mp }) {
     const old = camps.get(id);
     if (old) { group.remove(old.obj); dispose(old.obj); camps.delete(id); }
     if (camp) {
-      const obj = buildCamp(THREE, camp);
+      const obj = buildCamp(THREE, camp, { pulse: sound ? (t) => sound.pulse(id, t) : null });
       group.add(obj);
       camps.set(id, { data: camp, obj });
-    }
+      // The PA plays only while it's set up; the owner's name picks the tune, so each camp sounds different.
+      const pa = obj.userData.pa;
+      sound?.set(id, pa ? { ...pa, style: camp.music || DEFAULT_MUSIC, seed: camp.owner } : null);
+    } else sound?.remove(id);
     for (const fn of listeners) fn();
   }
   room.onMessage("camps", (list) => { for (const id of [...camps.keys()]) put(id, null); for (const c of list) put(c.id, c); });
@@ -251,12 +263,18 @@ export function setupCamps({ THREE, scene, mp }) {
   }
   function hidePreview() { if (preview) { scene.remove(preview); preview.geometry.dispose(); preview = null; } }
 
-  function update(dt) {
+  // here: where you are (the music near you starts, far away stops).
+  function update(dt, here) {
     t += dt;
     for (const { obj } of camps.values()) obj.userData.tick?.(dt, t);
+    if (here) sound?.update(here);
   }
 
-  return { update, showPreview, hidePreview, all: () => [...camps.values()].map((c) => c.data), onChange: (fn) => listeners.add(fn) };
+  return {
+    update, showPreview, hidePreview, sound,
+    all: () => [...camps.values()].map((c) => c.data),
+    onChange: (fn) => listeners.add(fn),
+  };
 }
 
 function dispose(obj) {

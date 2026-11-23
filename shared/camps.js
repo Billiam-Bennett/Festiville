@@ -1,13 +1,25 @@
 // Player camps in the Campground: where a spot may go, and where the things in it stand.
 // Shared so the server enforces it and the browser can show "you can claim here" before asking.
 //
-// A camp: { id, owner, x, z, plot, items } — x/z is the CENTER of the spot (meters), plot is an id
-// from shared/economy.js (10×10, 10×20, 20×20), items are the camp items set up there.
+// A camp: { id, owner, x, z, plot, items, music } — x/z is the CENTER of the spot (meters), plot is an
+// id from shared/economy.js (10×10, 10×20, 20×20), items are the camp items set up there, and music
+// is what its PA system plays (MUSIC_STYLES below).
 import { TYPES } from "./layout.js";
 import { inside } from "./venue.js";
 import { plotById, campItemById } from "./economy.js";
 
 export const GAP = 0.6;   // meters kept clear between spots and around tents/trees
+
+// What a camp's PA system can play (client/camp-music.js makes the music; nothing is downloaded).
+// The camp's owner picks one in the Camp tab; everyone near the camp hears it.
+export const MUSIC_STYLES = [
+  { id: "house",  name: "House",   bpm: 124 },
+  { id: "hiphop", name: "Hip-hop", bpm: 90 },
+  { id: "reggae", name: "Reggae",  bpm: 76 },
+  { id: "chill",  name: "Chill",   bpm: 84 },
+];
+export const DEFAULT_MUSIC = "house";
+export const musicById = (id) => MUSIC_STYLES.find((m) => m.id === id) ?? null;
 
 // Ground areas that count as campground: the "Campground" area (id "camp" or any area labelled camp…).
 export const campAreas = (items) => items.filter((i) => i.type === "area" && (i.id === "camp" || /camp/i.test(i.label ?? "")));

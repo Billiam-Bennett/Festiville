@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkSpot, cleanCampItems, snap } from "../shared/camps.js";
+import { checkSpot, cleanCampItems, snap, musicById, DEFAULT_MUSIC } from "../shared/camps.js";
 import { plotById, plotRank } from "../shared/economy.js";
 import { LAYOUT } from "../shared/venue.js";
 
@@ -43,7 +43,7 @@ export class CampStore {
   // What everyone may see about a camp. The public id is the owner's name, not their account id.
   public(accountId) {
     const c = this.camps[accountId];
-    return c ? { id: c.owner.toLowerCase(), owner: c.owner, x: c.x, z: c.z, plot: c.plot, items: [...c.items] } : null;
+    return c ? { id: c.owner.toLowerCase(), owner: c.owner, x: c.x, z: c.z, plot: c.plot, items: [...c.items], music: c.music ?? DEFAULT_MUSIC } : null;
   }
   all() { this.refresh(); return Object.keys(this.camps).map((id) => this.public(id)); }
   of(accountId) { this.refresh(); return this.camps[accountId] ?? null; }
@@ -65,6 +65,7 @@ export class CampStore {
     this.camps[accountId] = {
       owner, x, z, plot,
       items: cleanCampItems(items ?? prev?.items ?? ["tent_basic"], owned, plot),
+      music: prev?.music ?? DEFAULT_MUSIC,
       updatedAt: new Date().toISOString(),
     };
     this.save(accountId);
@@ -75,6 +76,17 @@ export class CampStore {
     const c = this.of(accountId);
     if (!c) return { error: "Claim a camp spot first." };
     c.items = cleanCampItems(items, owned, c.plot);
+    c.updatedAt = new Date().toISOString();
+    this.save(accountId);
+    return { camp: this.public(accountId) };
+  }
+
+  // What the camp's PA system plays (shared/camps.js → MUSIC_STYLES).
+  setMusic(accountId, style) {
+    const c = this.of(accountId);
+    if (!c) return { error: "Claim a camp spot first." };
+    if (!musicById(style)) return { error: "Pick a music style." };
+    c.music = style;
     c.updatedAt = new Date().toISOString();
     this.save(accountId);
     return { camp: this.public(accountId) };

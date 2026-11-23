@@ -2,7 +2,7 @@
 // The browser only shows and asks; the server (server/shop.js, FestivalRoom.handleCamp) decides,
 // takes the credits and answers with a "wallet" message (balance, unlocks, camp items, your camp).
 import { PLOTS, plotById, plotRank, CAMP_ITEMS, campItemById, CREDIT_PACKS, CREDIT_TERMS, QUEST_REWARDS, shopCatalog } from "../shared/economy.js";
-import { checkSpot, groundCapacity, cleanCampItems } from "../shared/camps.js";
+import { checkSpot, groundCapacity, cleanCampItems, MUSIC_STYLES, DEFAULT_MUSIC } from "../shared/camps.js";
 import { LAYOUT } from "../shared/venue.js";
 import { QUESTS } from "../shared/quests-data.js";
 
@@ -114,6 +114,17 @@ export function setupShop({ mp, toast, account, camps, me }) {
         room.send("camp", { action: "setup", items: cleaned });
       };
       out.push(row(item.name + (up ? " ✓" : ""), note, toggle));
+    }
+    // With the PA set up, pick what it plays. Everyone near your camp hears it (louder the closer they are).
+    if (mine.items.includes("pa")) {
+      out.push(heading("PA music"), el("p", { className: "small", textContent: "Everyone near your camp hears it. Mute your own speakers with 🔊 by the map." }));
+      const chips = el("div", { className: "chips" });
+      for (const m of MUSIC_STYLES) {
+        const b = el("button", { type: "button", textContent: m.name, onclick: () => room.send("camp", { action: "music", style: m.id }) });
+        b.setAttribute("aria-pressed", String((mine.music ?? DEFAULT_MUSIC) === m.id));
+        chips.append(b);
+      }
+      out.push(chips);
     }
     return out;
   }
