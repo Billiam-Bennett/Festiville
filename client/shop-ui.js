@@ -1,8 +1,8 @@
 // Credits and the shop: the 🪙 balance button and the Shop panel (Camp · Wear · Looks · Get credits).
 // The browser only shows and asks; the server (server/shop.js, FestivalRoom.handleCamp) decides,
 // takes the credits and answers with a "wallet" message (balance, unlocks, camp items, your camp).
-import { PLOTS, plotById, plotRank, CAMP_ITEMS, campItemById, CREDIT_PACKS, CREDIT_TERMS, QUEST_REWARDS, shopCatalog } from "../shared/economy.js";
-import { checkSpot, groundCapacity, cleanCampItems } from "../shared/camps.js";
+import { PLOTS, plotById, plotRank, CAMP_ITEMS, campItemById, CREDIT_PACKS, CREDIT_TERMS, QUEST_REWARDS, HUNT, shopCatalog } from "../shared/economy.js";
+import { checkSpot, groundCapacity, cleanCampItems, MUSIC_STYLES, DEFAULT_MUSIC } from "../shared/camps.js";
 import { LAYOUT } from "../shared/venue.js";
 import { QUESTS } from "../shared/quests-data.js";
 
@@ -12,7 +12,7 @@ const coins = (n) => `${n.toLocaleString()} 🪙`;
 
 export function setupShop({ mp, toast, account, camps, me }) {
   const room = mp.room;
-  let wallet = { credits: account?.credits ?? 0, unlocks: account?.unlocks ?? [], campItems: account?.campItems ?? [], camp: null };
+  let wallet = { credits: account?.credits ?? 0, unlocks: account?.unlocks ?? [], campItems: account?.campItems ?? [], camp: null, crewCamp: null };
   let tab = "camp";
   let plotChoice = PLOTS[0].id;
   let spotWhy = "";   // why a spot here wouldn't work ("" = it would)
@@ -30,10 +30,13 @@ export function setupShop({ mp, toast, account, camps, me }) {
     if (open()) render();
   });
   room.send("wallet");
-  // Your own camp changed outside this panel (e.g. `npm run account -- camp-release`): get a fresh wallet.
+  // Your own camp or your crew camp changed outside this panel (a campmate, or `npm run account --
+  // camp-release`): get a fresh wallet.
   camps.onChange(() => {
-    const mineNow = camps.all().find((c) => c.id === account?.username?.toLowerCase()) ?? null;
-    if (JSON.stringify(mineNow) !== JSON.stringify(wallet.camp)) room.send("wallet");
+    const name = account?.username ?? "", all = camps.all();
+    const mineNow = all.find((c) => c.id === name.toLowerCase()) ?? null;
+    const crewNow = all.find((c) => (c.mates ?? []).includes(name)) ?? null;
+    if (JSON.stringify(mineNow) !== JSON.stringify(wallet.camp) || JSON.stringify(crewNow) !== JSON.stringify(wallet.crewCamp ?? null)) room.send("wallet");
     else if (open() && tab === "camp") render();
   });
 
@@ -82,6 +85,7 @@ export function setupShop({ mp, toast, account, camps, me }) {
       out.push(sizes, el("p", { id: "spot-why", className: "small spot-why" }));
       const claim = el("button", { type: "button", id: "spot-claim", textContent: `Claim this spot · ${coins(plotById(plotChoice).price)}`, onclick: () => room.send("camp", { action: "claim", plot: plotChoice }) });
       out.push(claim);
+      if (wallet.crewCamp) out.push(...crewCampSection(wallet.crewCamp));
       return out;
     }
     const plot = plotById(mine.plot);
@@ -100,22 +104,81 @@ export function setupShop({ mp, toast, account, camps, me }) {
     } }));
     out.push(actions, el("p", { id: "spot-why", className: "small spot-why" }));
 
-    out.push(heading("Your camp"));
-    const owned = wallet.campItems;
+    out.push(heading("Your camp"), ...itemRows(mine, "own"), ...musicChips(mine, "own"), ...shareSection(mine));
+    if (wallet.crewCamp) out.push(...crewCampSection(wallet.crewCamp));
+    return out;
+  }
+
+  // ---------- Camp items: your own camp ("own") or a crew camp you're part of ("crew") ----------
+  const myName = () => account?.username ?? "";
+  function itemRows(camp, which) {
+    const rows = [], owned = wallet.campItems;
     for (const item of CAMP_ITEMS) {
-      const has = owned.includes(item.id), up = mine.items.includes(item.id);
-      const note = [item.featured ? "★ Featured" : "", item.place === "edge" ? "Goes around your spot" : "Uses ground space", item.group === "tent" ? "One tent at a time" : ""].filter(Boolean).join(" · ");
-      if (!has) { out.push(row(item.name, note, buyBtn(item.id, item.price))); continue; }
-      const toggle = el("button", { type: "button", className: "btn-sm " + (up ? "btn-ghost" : ""), textContent: up ? "Pack away" : "Set up" });
-      toggle.onclick = () => {
-        let next = up ? mine.items.filter((i) => i !== item.id) : [...mine.items.filter((i) => !(item.group && campItemById(i)?.group === item.group)), item.id];
-        const cleaned = cleanCampItems(next, owned, mine.plot);
-        if (!up && !cleaned.includes(item.id)) return toast("No ground space left. Pack something away or upgrade your spot.", "error");
-        room.send("camp", { action: "setup", items: cleaned });
-      };
-      out.push(row(item.name + (up ? " ✓" : ""), note, toggle));
+      const has = owned.includes(item.id), up = camp.items.includes(item.id);
+      const holder = up ? camp.by?.[item.id] ?? camp.owner : "";
+      const note = [item.featured ? "★ Featured" : "", item.place === "edge" ? "Goes around the spot" : "Uses ground space", item.group === "tent" ? "One tent at a time" : ""].filter(Boolean).join(" · ");
+      if (up && holder !== myName()) {
+        // Someone else's: a campmate's in your camp (you can pack it away), or the owner's/another
+        // campmate's in a crew camp (only they can).
+        rows.push(row(`${item.name} ✓`, `Set up by ${holder}`, which === "own" ? itemBtn(item, true, which, camp) : ""));
+        continue;
+      }
+      if (!has) { if (which === "own" || !wallet.camp) rows.push(row(item.name, note, buyBtn(item.id, item.price))); continue; }
+      rows.push(row(item.name + (up ? " ✓" : ""), note, itemBtn(item, up, which, camp)));
+    }
+    return rows;
+  }
+  function itemBtn(item, up, which, camp) {
+    const b = el("button", { type: "button", className: "btn-sm " + (up ? "btn-ghost" : ""), textContent: up ? "Pack away" : "Set up" });
+    b.onclick = () => {
+      if (!up) {   // quick check here; the server checks again
+        const next = [...camp.items.filter((i) => !(item.group && campItemById(i)?.group === item.group)), item.id];
+        if (!cleanCampItems(next, next, camp.plot).includes(item.id)) return toast("No ground space left. Pack something away or upgrade the spot.", "error");
+      }
+      room.send("camp", { action: "item", item: item.id, on: !up, camp: which });
+    };
+    return b;
+  }
+  // With the PA set up, pick what it plays (the owner, or whoever brought the PA to a crew camp).
+  function musicChips(camp, which) {
+    if (!camp.items.includes("pa") || (which === "crew" && (camp.by?.pa ?? camp.owner) !== myName())) return [];
+    const chips = el("div", { className: "chips" });
+    for (const m of MUSIC_STYLES) {
+      const b = el("button", { type: "button", textContent: m.name, onclick: () => room.send("camp", { action: "music", style: m.id, camp: which }) });
+      b.setAttribute("aria-pressed", String((camp.music ?? DEFAULT_MUSIC) === m.id));
+      chips.append(b);
+    }
+    return [heading("PA music"), el("p", { className: "small", textContent: "Everyone near the camp hears it. Mute your own speakers with 🔊 by the map." }), chips];
+  }
+
+  // ---------- Crew camps ----------
+  // Your camp: share it with your crew (they set up things they own), see and remove campmates.
+  function shareSection(mine) {
+    const out = [heading("Crew camp")];
+    const mates = mine.mates ?? [];
+    out.push(el("p", { className: "small", textContent: mates.length
+      ? `Shared with ${mates.join(", ")}. They can set up their own things here; you can pack away anything to make room.`
+      : "Share your camp with your crew: everyone in it can set up their own things here too. Nobody pays for anyone else's things." }));
+    out.push(el("div", { className: "row" }, el("button", { type: "button", className: "btn-sm", textContent: mates.length ? "Add my crew" : "Share with my crew", onclick: () => room.send("camp", { action: "share" }) })));
+    for (const n of mates) {
+      out.push(row(n, "Campmate", el("button", { type: "button", className: "btn-sm btn-ghost", textContent: "Remove", onclick: () => {
+        if (confirm(`Take ${n} off your camp? Their things go with them.`)) room.send("camp", { action: "unshare", name: n });
+      } })));
     }
     return out;
+  }
+  // A crew camp you're part of (someone else's camp).
+  function crewCampSection(crew) {
+    const plot = plotById(crew.plot);
+    return [
+      heading(`${crew.owner}'s crew camp`),
+      el("p", { className: "small", textContent: `${plot?.name ?? "Camp spot"} · ground space ${groundUsed(crew)}/${groundCapacity(crew.plot)}. Set up things you own here; they stay yours.` }),
+      ...itemRows(crew, "crew"),
+      ...musicChips(crew, "crew"),
+      el("div", { className: "row" }, el("button", { type: "button", className: "btn-sm btn-ghost", textContent: "Leave crew camp", onclick: () => {
+        if (confirm(`Leave ${crew.owner}'s crew camp? Your things come with you.`)) room.send("camp", { action: "leave" });
+      } })),
+    ];
   }
   const groundUsed = (c) => c.items.filter((id) => { const i = campItemById(id); return i?.place === "ground" && !i.group; }).length;
 
@@ -145,8 +208,9 @@ export function setupShop({ mp, toast, account, camps, me }) {
 
   // ---------- Get credits ----------
   function creditsTab() {
-    const out = [heading("Earn credits"), el("p", { className: "small", textContent: "Side quests pay credits: the full reward the first time, a smaller one for repeats." })];
+    const out = [heading("Earn credits"), el("p", { className: "small", textContent: "Side quests pay credits (the full reward the first time, a smaller one for repeats), and so does the daily scavenger hunt." })];
     for (const [id, r] of Object.entries(QUEST_REWARDS)) if (QUESTS[id]) out.push(row(QUESTS[id].name, `First time ${coins(r.first)} · repeats ${coins(r.repeat)}`));
+    out.push(row("Daily scavenger hunt", `${HUNT.tokens} glowing tokens a day: ${coins(HUNT.perToken)} each, ${coins(HUNT.bonus)} for all ${HUNT.tokens}. Tap 🔍 Hunt at the top for hints.`));
     out.push(heading("Buy credits"), el("p", { className: "small", textContent: "Coming soon. Buying credits isn't open yet." }));
     for (const p of CREDIT_PACKS) {
       const b = el("button", { type: "button", className: "btn-sm", textContent: `$${p.usd.toFixed(2)}`, disabled: true });

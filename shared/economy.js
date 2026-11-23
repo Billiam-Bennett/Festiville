@@ -5,6 +5,7 @@
 //   - everyone starts with STARTING_CREDITS
 //   - side quests pay credits (QUEST_REWARDS): the full amount the first time, less on repeats,
 //     and repeats stop paying after DAILY_REPEAT_CAP credits in a day (so quests can't be farmed)
+//   - the daily scavenger hunt (HUNT): a few credits per token found, plus a bonus for all of them
 //   - buying a credit pack with real money (CREDIT_PACKS). The packs and the hook are here, but no
 //     payment provider is connected yet: grant credits with `npm run account -- credits <user> +500`.
 //
@@ -31,6 +32,11 @@ export const QUEST_REWARDS = {
   soundcheck: { first: 250, repeat: 70 },
   vendorrush: { first: 200, repeat: 60 },
 };
+
+// Daily scavenger hunt (server/hunt.js): `tokens` hidden around the grounds, the same for everyone
+// each UTC day. Walking over one pays `perToken`; finding them all pays `bonus` on top. At most
+// tokens × perToken + bonus credits a day (100), so it's a nice daily habit, not a grind.
+export const HUNT = { tokens: 5, perToken: 10, bonus: 50, range: 2.2 };
 
 // Credit packs for real money. NOT LIVE: no payment provider is connected (see server/shop.js →
 // grantPack, which a payment webhook will call). usd is what the store page will charge.

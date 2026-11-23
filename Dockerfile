@@ -4,13 +4,16 @@
 FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production PORT=2567 FV_DATA_DIR=/app/data
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+# The lockfile pins exact versions; .npmrc keeps npm from pulling in transports we don't use
+# (one of them can only be fetched with git, which this image doesn't have).
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY server ./server
 COPY shared ./shared
 COPY client ./client
 COPY scripts ./scripts
-# Accounts, vendor listings and reports live here; keep it on a volume so they survive updates.
+# All saved game data (accounts, credits, camps, vendors, layout, reports) lives here; keep it on a
+# volume so it survives updates.
 RUN mkdir -p /app/data && chown node:node /app/data
 VOLUME /app/data
 EXPOSE 2567

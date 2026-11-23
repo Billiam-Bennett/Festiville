@@ -168,6 +168,12 @@ test("camp store: place, move, items, release; saved and announced", () => {
     assert.ok(camps.place("a1", "Rook", { x: -24, z: 52, plot: "plot_10x20" }, ["tent_basic"]).camp);              // upgrade in place
     assert.equal(new CampStore({ dir, layoutItems: () => LAYOUT_ITEMS }).of("a1").plot, "plot_10x20");               // saved
     assert.deepEqual(camps.all().map((c) => c.id), ["rook"]);
+    // The PA's music: house until the owner picks something else; only known styles.
+    assert.equal(camps.all()[0].music, "house");
+    assert.equal(camps.setMusic("a1", "reggae").camp.music, "reggae");
+    assert.match(camps.setMusic("a1", "polka").error, /music style/);
+    assert.match(camps.setMusic("nobody", "house").error, /Claim a camp/);
+    assert.equal(new CampStore({ dir, layoutItems: () => LAYOUT_ITEMS }).public("a1").music, "reggae");   // saved
     assert.ok(camps.release("a1"));
     assert.ok(!camps.release("a1"));
     assert.deepEqual(seen.at(-1), ["rook", null]);

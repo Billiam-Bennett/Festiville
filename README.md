@@ -270,6 +270,8 @@ FestiVille has its own currency, **credits** (🪙). Every new player starts wit
 | Soundcheck | 250 | 70 |
 | Vendor Rush | 200 | 60 |
 
+**Daily scavenger hunt:** every day (midnight UTC) 5 gold tokens appear around the grounds, in the same places for everyone, so friends can hunt together. They glow with a light beam you can spot from across the field. Tap **🔍 Hunt** at the top for a hint list ("A little east of Dex", "Somewhere around the Campground") and the time until the next hunt. Walk over a token to pick it up: **10 credits** each, and **50 more** for finding all 5. That's 100 a day at most. The server checks you're really standing there. The rules are in `server/hunt.js`, the numbers in `HUNT` in `shared/economy.js`.
+
 **Spending credits:**
 
 - **⛺ Camp.** Claim your own spot in the Campground: walk to where you want it, pick a size and claim it. A green outline shows your spot fits, and a red one comes with the reason it doesn't. Spots are **10×10** (200), **10×20** (450) and **20×20** (900); upgrading pays the difference. Every camp comes with a dome tent. Buy more for it, then **Set up** or **Pack away** each item:
@@ -277,6 +279,12 @@ FestiVille has its own currency, **credits** (🪙). Every new player starts wit
   - **featured** items: a **PA system**, a **laser rig**, a **neon sign** with your name, and a **disco ball**
 
   Ground items need space in your spot, so bigger spots hold more. Lights, flags and signs go around the edge. Everyone sees your camp, even while you're offline. **Move camp here** moves it for free; **Give back spot** frees it with no refund, and you keep your items.
+
+  **The PA plays music.** Everyone near a camp with a PA hears it: full volume within a few steps, fading out about 30 m away. The owner picks the style in the Camp tab: **House**, **Hip-hop**, **Reggae** or **Chill**. The game composes and synthesizes it in the browser (`client/camp-music.js`), so there are no music files or licenses. Each camp gets its own key and chords from its owner's name, and the speakers thump on the real beat. Tap **🔊** by the map to mute camp music; the game remembers it.
+
+  **Crew camps.** In the Camp tab, **Share with my crew** makes everyone in your crew a campmate (up to a full crew of 4; you can be a campmate in one crew camp at a time). Campmates set up things *they* own in your camp. Each item shows who brought it, everyone shares the ground space, and you can pack away anything to make room. Campmates can leave, and you can remove them; their things go with them. Nobody pays for anyone else's things, so credits never move between players. A shared camp shows "Rook & crew" on its sign and on the map.
+
+  **On the map:** camps show on the minimap and the full map. Yours is pink, your crew's are cyan, and ♪ marks a camp whose PA is set up. **⛺ My camp** on the full map sets a waypoint back to your camp.
 - **🕶️ Wear.** Premium things to wear around the festival: festival totem, shutter shades, heart glasses, top hat, halo, fairy wings. Once you own one, put it on from 👕.
 - **🧍 Looks.** Premium characters and character parts.
 - **🪙 Credits.** How to earn credits, and the credit packs. Buying packs with real money is **not open yet**. The packs and the server hook (`grantPack` in `server/shop.js`) are ready for a payment provider. The plan is **PayPal Business**: a PayPal order for the pack, then PayPal's payment-captured webhook calls `grantPack` with the capture id, so a repeated webhook can't credit twice. Until that's connected, give credits from the command line:
@@ -288,11 +296,12 @@ npm run account -- credits <username> -200 refund
 npm run account -- camp-release <username>            # take back a camp spot (no refund)
 ```
 
-**How it's kept honest:** balances only change on the server, and the browser only asks. Every credit earned or spent is a line in `data/credits-ledger.jsonl`: who, how much, the new balance, and why (`quest:soundcheck`, `buy:totem`, `camp:plot_10x10`, `console: …`). Camps are saved in `data/camps.json`.
+**How it's kept honest:** balances only change on the server, and the browser only asks. Every credit earned or spent is a line in `data/credits-ledger.jsonl`: who, how much, the new balance, and why (`quest:soundcheck`, `hunt:2026-11-23:4:complete`, `buy:totem`, `camp:plot_10x10`, `console: …`). Camps, campmates and PA music are saved in `data/camps.json`.
 
 **Changing prices or adding things:** everything is in `shared/economy.js`:
 
 - starting credits, quest rewards and the daily cap
+- the daily scavenger hunt (`HUNT`)
 - credit packs
 - camp spot sizes and prices
 - camp items
@@ -460,15 +469,16 @@ Plus a domain name (~$12/year) if you want `play.yourfestival.com` instead of an
 
 1. **Make a server.** At your host, create an Ubuntu 24.04 server (2 GB RAM is plenty to start). Pick the region closest to most players (e.g. US East).
 2. **Point a domain at it.** In your domain's DNS settings, add an **A record** like `play` → the server's IP address.
-3. **Install Docker on it.** Log in (`ssh root@<server IP>`) and run: `curl -fsSL https://get.docker.com | sh`
-4. **Copy the game there.** From your PC, in the folder above festiville: `scp -r festiville root@<server IP>:/opt/` (or upload it with WinSCP, or push it to GitHub and `git clone`). Don't copy `node_modules`.
-5. **Start it:**
+3. **Copy the game there.** Log in (`ssh root@<server IP>`) and `git clone` the repository into `/opt/festiville`. Or, from your PC in the folder above festiville: `scp -r festiville root@<server IP>:/opt/` (or WinSCP). Don't copy `node_modules` or `data`.
+4. **Start it with one command:**
    ```bash
    cd /opt/festiville
-   echo DOMAIN=play.yourfestival.com > deploy/.env
-   docker compose -f deploy/docker-compose.yml up -d --build
+   ./deploy/setup-server.sh play.yourfestival.com
    ```
-6. **Open `https://play.yourfestival.com`.** The first load can take a minute while the HTTPS certificate is issued.
+   It installs Docker if needed, saves your domain in `deploy/.env`, builds and starts the game behind Caddy (automatic HTTPS), waits until the game answers, and sets up a daily backup (04:17 server time, keeping the newest 14). It's safe to run again.
+5. **Open `https://play.yourfestival.com`.** The first load can take a minute while the HTTPS certificate is issued. Sign up in the game, then make yourself the organizer: `./deploy/account.sh make-admin <you>`.
+
+(The manual way, if you prefer: install Docker with `curl -fsSL https://get.docker.com | sh`, run `echo DOMAIN=play.yourfestival.com > deploy/.env`, then `docker compose -f deploy/docker-compose.yml up -d --build`.)
 
 **Running things on the hosted server** (from `/opt/festiville`):
 
@@ -476,11 +486,11 @@ Plus a domain name (~$12/year) if you want `play.yourfestival.com` instead of an
 ./deploy/account.sh make-mod <you>                       # any `npm run account` command
 ./deploy/vendor-link.sh hippiedips --base https://play.yourfestival.com
 # the festival builder is at https://play.yourfestival.com/client/builder.html (sign in as an organizer)
-./deploy/backup.sh                                       # saves accounts/vendors/reports to a .tar.gz
+./deploy/backup.sh                                       # saves all game data (accounts, credits, camps, vendors, reports) to a .tar.gz
 docker compose -f deploy/docker-compose.yml logs -f festiville    # watch the server log
 ```
 
-**Updating:** copy the new files over, then run the `up -d --build` line again. Players' data lives in a Docker volume and isn't touched. **Back up** with `backup.sh` regularly and keep the copies somewhere else.
+**Updating:** copy the new files over (or `git pull`), then run `./deploy/setup-server.sh <your domain>` again (or the `up -d --build` line). Players' data lives in a Docker volume and isn't touched. **Back up** with `backup.sh` regularly and keep the copies somewhere else.
 
 **Health check:** `https://your-domain/api/health` shows players online, rooms, memory, and how long game ticks take. Once a minute the server log also prints a `[stats]` line while people are playing.
 
@@ -492,7 +502,7 @@ npm run loadtest -- 200                       # from another terminal: 200 fake 
 npm run loadtest -- 500 wss://play.yourfestival.com    # against the hosted server
 ```
 
-Fake players (`lt_0001`, `lt_0002`, …) join, walk around and chat. Every 5 seconds it prints the response time (key press → server confirms the move; under 150 ms feels fine), updates per second (should stay near 20), and the server's tick time (fine under ~25 ms of its 50 ms budget). At the end it says whether the server coped. Past ~300 fake players, run the load test from a second computer so your own machine isn't the bottleneck. For the hosted test, `deploy/setup-server.sh` already raises the sign-up limit; afterwards set `FV_SIGNUPS_PER_HOUR=` (empty) in `deploy/.env` and run the `up -d` line again to go back to the default.
+Fake players (`lt_0001`, `lt_0002`, …) join, walk around and chat. Every 5 seconds it prints the response time (key press → server confirms the move; under 150 ms feels fine), updates per second (should stay near 20), and the server's tick time (fine under ~25 ms of its 50 ms budget). At the end it says whether the server coped. Past ~300 fake players, run the load test from a second computer so your own machine isn't the bottleneck. For the hosted test, run `./deploy/setup-server.sh <your domain> --loadtest` first to lift the sign-up limit; afterwards run it again without `--loadtest` to go back to the default.
 
 ### Growing to 1,000+ players at once
 

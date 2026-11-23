@@ -15,6 +15,7 @@ import { normalizeRecipe, partById, bodyById } from "../shared/parts.js";
 import { createLookBuilder, createPreview } from "./look-builder.js";
 import { setupCamps } from "./camps.js";
 import { setupShop } from "./shop-ui.js";
+import { setupHunt } from "./hunt-ui.js";
 import { UNLOCK_PRICES } from "../shared/economy.js";
 import { createCameraRig } from "./camera.js";
 import { applyLayout } from "../shared/venue.js";
@@ -56,6 +57,31 @@ addEventListener("resize", () => {
 });
 
 const controls = createControls($("joystick"));
+
+// --- Sound: PA systems at camps play music (client/camp-music.js) ---
+// The listener rides on the camera. Browsers only allow sound after a tap or key press, so the audio
+// is resumed when you join (and on any later tap). The 🔊 button by the map mutes it; we remember that.
+const listener = new THREE.AudioListener();
+camera.add(listener);
+let soundOn = true;
+try { soundOn = localStorage.getItem("fv-sound") !== "off"; } catch {}
+const resumeAudio = () => { if (soundOn && !document.hidden && listener.context.state !== "running") listener.context.resume().catch(() => {}); };
+function applySound() {
+  listener.setMasterVolume(soundOn ? 1 : 0);
+  camps?.sound?.setEnabled(soundOn);
+  $("sound-btn").textContent = soundOn ? "🔊" : "🔇";
+  $("sound-btn").setAttribute("aria-pressed", String(!soundOn));
+  $("sound-btn").setAttribute("aria-label", soundOn ? "Mute camp music" : "Unmute camp music");
+}
+$("sound-btn").onclick = () => {
+  soundOn = !soundOn;
+  try { localStorage.setItem("fv-sound", soundOn ? "on" : "off"); } catch {}
+  resumeAudio();
+  applySound();
+};
+addEventListener("pointerdown", resumeAudio);
+// A hidden tab goes quiet (and costs nothing); it picks up again when you come back.
+document.addEventListener("visibilitychange", () => { if (document.hidden) listener.context.suspend().catch(() => {}); else resumeAudio(); });
 
 // Characters load on demand; until one arrives (or if it fails), players see a simple placeholder.
 const cast = createCast(THREE, { placeholder: (p) => defaultAvatar(THREE, p) });
@@ -242,9 +268,10 @@ let chat = null;
 let moderation = null;
 let camps = null;
 let shop = null;
+let hunt = null;
 let removedText = "";   // why staff removed you, if they did
 // Add ?debug to the URL to poke at the game from the browser console (window.__gs).
-if (params.has("debug")) window.__gs = { THREE, scene, camera, get mp() { return mp; } };
+if (params.has("debug")) window.__gs = { THREE, scene, camera, listener, get mp() { return mp; }, get camps() { return camps; }, get hunt() { return hunt; } };
 
 // --- Change your look mid-game (the 👕 button) ---
 let lkIndex = 0, lkChosen = new Set(), lkMode = "classic";
@@ -334,6 +361,7 @@ $("lk-apply").onclick = () => {
 $("join-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!account) return submitAuth();
+  resumeAudio();   // joining is a tap/key press, so the browser lets sound start
   const profile = { token, look: CHARACTERS[lookIndex].id, recipe: joinRecipe(), name: account.username, accessories: [...chosen] };
   try { localStorage.setItem("fv-look", profile.look); localStorage.setItem("fv-accessories", profile.accessories.join(",")); } catch {}
 
@@ -357,11 +385,13 @@ $("join-form").addEventListener("submit", async (e) => {
     mp.room.onMessage("layout", () => quests.toast("The festival layout was just updated. Refresh the page to see the new grounds.", "big", 10000));
     mp.room.onLeave((code) => showDisconnected(code));
     quests = setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar });
-    venue = setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, quests, myAvatar: () => me });
+    camps = setupCamps({ THREE, scene, mp, listener });   // before the venue, so the maps can show camps
+    applySound();
+    venue = setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, quests, myAvatar: () => me, camps });
     chat = setupChat({ THREE, mp, quests });
     moderation = setupModeration({ mp, quests, chat, account });
     setupReports({ mp, quests, isStaff: moderation.isStaff });
-    camps = setupCamps({ THREE, scene, mp });
+    hunt = setupHunt({ THREE, scene, mp, toast: quests.toast });
     shop = setupShop({ mp, toast: quests.toast, account, camps, me: () => mp.room.state.players.get(mp.room.sessionId) });
     emotes?.dispose();
     emotes = setupEmotes({ mp, button: $("dance") });
@@ -442,8 +472,9 @@ renderer.setAnimationLoop(() => {
     quests?.update(dt);
     venue?.update(dt);
     chat?.update(dt);
-    camps?.update(dt);
+    camps?.update(dt, me.position);
     shop?.update(dt);
+    hunt?.update(dt);
     moderation?.update();
     rig.update(dt, me.position);   // camera follows you; scroll / pinch / +/- to zoom
     $("hud-online").textContent = `${mp.onlineCount()} online`;
