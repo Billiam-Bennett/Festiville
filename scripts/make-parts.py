@@ -28,21 +28,26 @@
 # Textures are capped at TEX_MAX px and saved as WebP to keep downloads small. Hair and eyebrow textures
 # are turned light grey so the game's hair colors tint them cleanly (shared/parts.js). Materials are
 # written as alpha MASK (cut-out) rather than BLEND, so they sort and draw like solid surfaces in the
-# game; the body's skin is fully OPAQUE. Every asset used here is CC0: MakeHuman's packs (system assets,
-# hair01, shoes01, eyebrows01, shirts01, pants01, skirts01) and the MakeHuman 2 CC0 repository
-# (github.com/Makehuman-2/MH2_Asset_Repository_CCO releases: mh_system_CC0.zip and crude_kit_CC0.zip;
-# unzip the system pack into MPFB's user data folder and the crude kit into its clothes/ folder).
+# game; the body's skin is fully OPAQUE. Every asset used here is CC0 (check a pack's packs/*.json for
+# each asset's license before adding it: a few assets in "CC0" packs are CC-BY; ignore the "AGPL3" line
+# MakeClothes writes into every .mhclo, that's the tool's default header, not the asset's license):
+#   - MakeHuman's asset packs, https://static.makehumancommunity.org/assets/assetpacks.html (the *_cc0.zip
+#     of hair01, shoes01, shirts01, pants01, skirts01, suits01, hats01, glasses01, masks01, gloves01;
+#     unzip each into MPFB's user data folder)
+#   - the MakeHuman 2 CC0 repository (github.com/Makehuman-2/MH2_Asset_Repository_CCO releases:
+#     mh_system_CC0.zip into MPFB's user data folder, crude_kit_CC0.zip into its clothes/ folder).
 import bpy, sys, os, json, glob, struct, tempfile
 import numpy as np
 from mathutils import kdtree
 from mathutils.bvhtree import BVHTree
 from mathutils import Vector
-try:
-    from bl_ext.blender_org.mpfb.services import LocationService
-except ImportError:   # running under the `bpy` Python module: enable MPFB (installed as a user extension) first
-    import addon_utils
+import addon_utils
+if not addon_utils.check("bl_ext.blender_org.mpfb")[1]:
+    # Running under the `bpy` Python module: MPFB (installed as a user extension) isn't loaded yet, and it
+    # must be enabled before it's imported. Loading factory settings first registers the extension repos.
+    bpy.ops.wm.read_factory_settings(use_empty=True)
     addon_utils.enable("bl_ext.blender_org.mpfb", default_set=True)
-    from bl_ext.blender_org.mpfb.services import LocationService
+from bl_ext.blender_org.mpfb.services import LocationService
 from bl_ext.blender_org.mpfb.services.humanservice import HumanService
 from bl_ext.blender_org.mpfb.services.targetservice import TargetService
 
@@ -97,7 +102,10 @@ SHAPES = {
 PARTS = {
     "hair": ["afro01", "bob01", "braid01", "long01", "ponytail01", "short01", "short02", "short04",
              "cortu_short_messy_hair", "elvs_french_braid_variation", "rehmanpolanski_hair_bun_brown",
-             "sonntag78_blond_with_headband"],
+             "sonntag78_blond_with_headband",
+             # hair01 pack (CC0)
+             "toigo_blunt_bob_with_bangs", "toigo_inverted_bob", "learning_anime_hair", "cortu_strawberry_cloud_hair",
+             "elvs_double_mh_braid", "elvs_reverse_french_braid_bun", "culturalibre_hair_06", "cortu_shaggy_green_hair"],
     "eyebrows": ["eyebrow001", "eyebrow006", "eyebrow010"],
     "top": ["toigo_keyhole_tank_top", "toigo_camisole_top", "skalldyrssuppe_tube_top_funky_colors",
             "toigo_turtleneck_halter_top", "toigo_basic_tucked_t-shirt", "elvs_crude_t-shirt_male",
@@ -105,20 +113,54 @@ PARTS = {
             ("puffer_jacket", "male_casualsuit05", "upper"), ("striped_shirt", "male_casualsuit03", "upper"),
             ("logo_longsleeve", "male_casualsuit02", "upper"), ("logo_tee", "female_casualsuit01", "upper"),
             ("suit_jacket", "male_elegantsuit01", "upper"),
-            ("sport_crop", "female_sportsuit01", "upper"), "crude_lab_coat_open_female", "male_crude_labcoat"],
+            ("sport_crop", "female_sportsuit01", "upper"), "crude_lab_coat_open_female", "male_crude_labcoat",
+            "toigo_bodice-style_top", ("dinner_jacket", "toigo_suit_with_dinner_jacket", "upper"),
+            ("pink_suit_jacket", "toigo_female_suit_2", "upper")],
     "bottom": ["cortu_jeans_shorts", "cortu_cargo_pants", "toigo_harem_pants", "toigo_wool_pants",
                "frankyaye_mini_skirt_01", "toigo_tiered_mini_skirt", "toigo_long_full_skirt",
                ("jeans", "male_casualsuit04", "lower"), ("pencil_skirt", "female_elegantsuit01", "lower"),
-               ("leggings", "female_sportsuit01", "lower"), ("belted_shorts", "female_casualsuit02", "lower")],
+               ("leggings", "female_sportsuit01", "lower"), ("belted_shorts", "female_casualsuit02", "lower"),
+               "toigo_skirt_with_lace_ruffle", "toigo_tiered_skirt", ("pink_suit_trousers", "toigo_female_suit_2", "lower")],
     "shoes": ["shoes01", "shoes02", "shoes03", "shoes04", "shoes05", "shoes06", "toigo_ankle_boots_female",
-              "toigo_ankle_boots_male", "scailman_gogo_platform_boots", "toigo_flats", "culturalibre_male_boots"],
-    "accessory": ["fedora01", "fedora_cocked", "crude_hat", "crude_lab_glasses", "crude_theater_mask",
-                  "crude_gloves", "crude_long_gloves"],
+              "toigo_ankle_boots_male", "scailman_gogo_platform_boots", "toigo_flats", "culturalibre_male_boots",
+              "toigo_ballet_flats_with_bows", "cortu_t-bar", "grinsegold_female_pirate_boots",
+              "scailman_semitransparent_water_boots", "toigo_stiletto_booties", "cortu_floppy_overknee_shoes"],
+    # Hats hide the scalp under them through the accessory mask (HIDE_IN); the game tucks the hair under them.
+    "hat": ["fedora01", "fedora_cocked", "crude_hat", "jujube_newsboy_cap", "joepal_xmas_cap",
+            "aethelraed_unraed_cloche_hat"],
+    "accessory": ["crude_lab_glasses", "crude_theater_mask", "crude_gloves", "crude_long_gloves",
+                  "ews_3d_glasses", "toigo_round_glasses_leopard", "spamrakuen_sagerfrogs_glasses_01",
+                  "spamrakuen_tbm_glasses_frames_01", "culturalibre_hero_mask_2", "toigo_gloves_short"],
 }
+# Vertex budgets for very dense meshes (download size and crowd rendering): file -> max vertices. Blender's
+# Decimate (collapse) keeps the UVs and skin weights. Not for hair cards (collapsing merges the cards).
+DECIMATE = {"learning_anime_hair": 8000, "grinsegold_female_pirate_boots": 6000, "culturalibre_hero_mask_2": 3000,
+            "toigo_stiletto_booties": 6000}
+# Texture fixes. Plain parts the game tints (shared/parts.js, no tint: false) are prepared for it:
+# "flat" = solid white (the Crude Kit paints white islands on black, and the black showed through as
+# blotches), "grey" = light grey keeping detail, like hair. "pad" = a printed texture painted as islands on
+# black: each island's color is spread over the black around it, so seams don't show dark smudges.
+TEXTURE_PREP = {"crude_hat": "flat", "crude_lab_glasses": "flat", "crude_theater_mask": "flat", "crude_gloves": "flat",
+                "crude_long_gloves": "flat", "jujube_newsboy_cap": "grey", "joepal_xmas_cap": "pad"}
 # Open garments (worn without a shirt here): hide only the skin right under the cloth, not everything the
 # asset's delete group marks (a lab coat expects a shirt and would otherwise leave a hole down the front).
 NEAR_ONLY = {"crude_lab_coat_open_female": 0.02, "male_crude_labcoat": 0.02}   # file -> max distance (m)
 CLOTHING_SLOTS = ("top", "bottom", "shoes", "accessory")   # get hide masks; must match HIDE_SLOTS in client/avatar.js
+# Slots whose parts hide skin through another slot's mask, after that slot's own bits (keeps the game's
+# body shader at four masks). The manifest marks those parts with "hideIn".
+HIDE_IN = {"hat": "accessory"}
+for _host in CLOTHING_SLOTS:
+    assert len(PARTS[_host]) + sum(len(PARTS[g]) for g, h in HIDE_IN.items() if h == _host) <= 24, f"{_host}: over 24 hide bits"
+
+
+def hide_bit(slot, index):
+    """(mask slot, bit) for the index-th part of a slot, or None if its parts hide no skin."""
+    if slot in CLOTHING_SLOTS:
+        return slot, index
+    if slot in HIDE_IN:
+        host = HIDE_IN[slot]
+        return host, len(PARTS[host]) + index
+    return None
 ASSET_DIR = {"hair": "hair", "eyebrows": "eyebrows"}       # everything else is in clothes/
 ASSET_TYPE = {"hair": "Hair", "eyebrows": "Eyebrows"}      # everything else is "Clothes"
 
@@ -161,8 +203,9 @@ def strip_subdivision(obj):
             obj.modifiers.remove(m)
 
 
-def greyscale_textures(obj):
-    """Turn the base color textures of obj's materials into light grey (keeping alpha), for tinting."""
+def greyscale_textures(obj, flat=False):
+    """Turn the base color textures of obj's materials into light grey (keeping alpha), for tinting.
+    flat: solid white instead (for plain parts whose texture is just a painted-white UV layout)."""
     for slot in obj.material_slots:
         if not slot.material or not slot.material.use_nodes:
             continue
@@ -177,6 +220,8 @@ def greyscale_textures(obj):
             seen = px[:, 3] > 0.1
             lo, hi = np.percentile(lum[seen], [2, 98]) if seen.any() else (0.0, 1.0)
             grey = 0.45 + 0.55 * np.clip((lum - lo) / max(hi - lo, 1e-3), 0, 1)   # keep strand detail, stay light
+            if flat:
+                grey = np.ones_like(grey)
             px[:, 0] = px[:, 1] = px[:, 2] = grey
             img.pixels.foreach_set(px.ravel())
             img["fv_grey"] = True
@@ -228,6 +273,35 @@ def add_buffer_view(j, binary, array):
     j["bufferViews"].append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(raw)})
     binary.extend(raw)
     return len(j["bufferViews"]) - 1
+
+
+def pad_textures(obj, steps=32):
+    """Spread each painted area of obj's base color textures over the black background around it."""
+    for slot in obj.material_slots:
+        if not slot.material or not slot.material.use_nodes:
+            continue
+        for node in slot.material.node_tree.nodes:
+            img = getattr(node, "image", None)
+            if node.type != "TEX_IMAGE" or not img or img.get("fv_pad") or img.colorspace_settings.name != "sRGB":
+                continue
+            w, h = img.size
+            px = np.empty(w * h * 4, dtype=np.float32)
+            img.pixels.foreach_get(px)
+            px = px.reshape(h, w, 4)
+            filled = px[:, :, :3].max(axis=2) > 0.03
+            for _ in range(steps):
+                if filled.all():
+                    break
+                total = np.zeros((h, w, 3), dtype=np.float32)
+                count = np.zeros((h, w), dtype=np.float32)
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    total += np.roll(np.where(filled[:, :, None], px[:, :, :3], 0), (dy, dx), axis=(0, 1))
+                    count += np.roll(filled, (dy, dx), axis=(0, 1))
+                grow = ~filled & (count > 0)
+                px[grow, :3] = total[grow] / count[grow][:, None]
+                filled |= grow
+            img.pixels.foreach_set(px.ravel())
+            img["fv_pad"] = True
 
 
 def set_alpha_modes(path, mode_for):
@@ -357,6 +431,26 @@ def body_coords(basemesh):
     return co @ mw[:3, :3].T + mw[:3, 3]
 
 
+def under_hat(part, rig, coords, snug=0.02):
+    """Body vertices a hat covers: seen from the middle of the skull, the hat is in front of them or at most
+    `snug` beyond them. (Skin far below a wide brim, like the ears, stays.)"""
+    bones = {b.name.split(":")[-1].replace("mixamorig", ""): b for b in rig.pose.bones}
+    head, top = bones["Head"], bones.get("HeadTop_End")
+    centre = (rig.matrix_world @ head.head + rig.matrix_world @ (top.head if top else head.tail)) / 2
+    tree = BVHTree.FromObject(part, bpy.context.evaluated_depsgraph_get())   # in the part's local space
+    inv = part.matrix_world.inverted()
+    origin, turn = inv @ centre, inv.to_3x3()
+    covered = []
+    for i, p in enumerate(coords):
+        d = Vector(p) - centre
+        if d.length > 0.2 or d.length < 1e-6:
+            continue
+        hit = tree.ray_cast(origin, (turn @ d).normalized(), 0.4)
+        if hit[0] is not None and hit[3] <= d.length + snug:
+            covered.append(i)
+    return covered
+
+
 def hips_height(rig):
     hips = next(b for b in rig.pose.bones if b.name.endswith("Hips"))
     return (rig.matrix_world @ hips.head).z
@@ -402,6 +496,14 @@ def split_outfit(obj, piece, split_z):
     bm.free()
     obj.data.update()
     return co[keep], co[~keep]
+
+
+def decimate(obj, budget):
+    """Add a Decimate modifier so obj exports with at most about `budget` vertices (applied on export)."""
+    n = len(obj.data.vertices)
+    if n > budget:
+        m = obj.modifiers.new("fv_decimate", "DECIMATE")
+        m.ratio = budget / n
 
 
 def kd(points):
@@ -459,13 +561,16 @@ for body, cfg in BODIES.items():
         # A split outfit only claims the covered skin that's closer to the half it keeps.
         masks = {slot: np.zeros(len(mesh.vertices), dtype=np.int64) for slot in CLOTHING_SLOTS}
         coords = body_coords(basemesh)
-        for slot in CLOTHING_SLOTS:
-            for bit, e in enumerate(PARTS[slot]):
+        for slot in (*CLOTHING_SLOTS, *HIDE_IN):
+            for index, e in enumerate(PARTS[slot]):
                 file, asset, piece = entry_names(e)
                 if not available(slot, file, asset):
                     continue
+                host, bit = hide_bit(slot, index)
                 part = add_part(slot, asset, basemesh)
                 kept_dropped = split_outfit(part, piece, split_z) if piece else None
+                if slot == "hat":
+                    masks[host][under_hat(part, rig, coords)] |= 1 << bit
                 group = basemesh.vertex_groups.get("Delete." + os.path.basename(asset_file("clothes", asset, "mhclo"))
                                                    .replace(".mhclo", "").replace(" ", "_"))
                 if group:
@@ -480,7 +585,7 @@ for body, cfg in BODIES.items():
                         inv = part.matrix_world.inverted()
                         near = lambda i: tree.find_nearest(inv @ Vector(coords[i]), NEAR_ONLY[file])[0] is not None
                         covered = [i for i in covered if near(i)]
-                    masks[slot][covered] |= 1 << bit
+                    masks[host][covered] |= 1 << bit
                     basemesh.vertex_groups.remove(group)
                 bpy.data.objects.remove(part, do_unlink=True)
         for slot, values in masks.items():
@@ -496,8 +601,9 @@ for body, cfg in BODIES.items():
                 raise FileNotFoundError(f"--keep-missing needs the earlier {body_path} to copy hide masks from")
             keep = {}
             for file, slot in missing.items():
-                if slot in CLOTHING_SLOTS:
-                    keep[slot] = keep.get(slot, 0) | (1 << old_parts[file]["hideBit"])
+                if "hideBit" in old_parts[file]:
+                    host = old_parts[file].get("hideIn", slot)
+                    keep[host] = keep.get(host, 0) | (1 << old_parts[file]["hideBit"])
             keep_old_bits(body_path, old_body, keep)
             print(f"KEPT {body}: hide bits of {len(missing)} parts that aren't installed: {sorted(missing)}")
         print(f"PART {body}/body.glb {size / 1e6:.2f}MB (before shapes)")
@@ -525,8 +631,10 @@ for body, cfg in BODIES.items():
             if only and only != (slot, file):
                 continue
             entry = {"slot": slot, "file": file + ".glb"}
-            if slot in CLOTHING_SLOTS:
-                entry["hideBit"] = bit
+            if hide_bit(slot, bit):
+                host, entry["hideBit"] = hide_bit(slot, bit)
+                if host != slot:
+                    entry["hideIn"] = host
             info["parts"][file] = entry
             if file in missing or not available(slot, file, asset):
                 continue
@@ -534,9 +642,13 @@ for body, cfg in BODIES.items():
             strip_subdivision(part)
             if piece:
                 split_outfit(part, piece, split_z)
+            if file in DECIMATE:
+                decimate(part, DECIMATE[file])
             hairy = slot in ("hair", "eyebrows")
-            if hairy:
-                greyscale_textures(part)
+            if TEXTURE_PREP.get(file) == "pad":
+                pad_textures(part)
+            elif hairy or file in TEXTURE_PREP:
+                greyscale_textures(part, flat=TEXTURE_PREP.get(file) == "flat")
             size = export([rig, part], os.path.join(out, file + ".glb"))
             cutoff = HAIR_CUTOFF if hairy else CLOTH_CUTOFF
             set_alpha_modes(os.path.join(out, file + ".glb"), lambda _n: ("MASK", cutoff))

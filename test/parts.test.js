@@ -37,6 +37,16 @@ test("catalog: every required slot has a free default for every body", () => {
   for (const s of PART_SLOTS) assert.ok(s.colors.length > 0, `${s.id} colors`);
 });
 
+test("catalog: the hat slot is optional, comes before accessories, and every body has hats", () => {
+  const ids = PART_SLOTS.map((s) => s.id);
+  const hat = PART_SLOTS.find((s) => s.id === "hat");
+  assert.ok(hat && !hat.required);
+  assert.ok(ids.indexOf("hat") === ids.indexOf("accessory") - 1);
+  for (const b of BODIES) assert.ok(partsFor(b.id, "hat").length >= 5, b.id);
+  // formerly only ever names real slots.
+  for (const s of PART_SLOTS) for (const f of s.formerly ?? []) assert.ok(PART_SLOTS.some((x) => x.id === f), `${s.id}.formerly ${f}`);
+});
+
 test("catalog: the accessory slot is optional and every body has accessories", () => {
   const slot = PART_SLOTS.find((s) => s.id === "accessory");
   assert.ok(slot && !slot.required);
@@ -73,12 +83,16 @@ test("assets: every catalog part has its file and a manifest entry in the right 
     const entry = MANIFEST.bodies[b].parts[path.split("/").pop().replace(/\.glb$/, "")];
     assert.ok(entry, `${p.id}: no manifest entry for ${path}`);
     assert.equal(entry.slot, p.slot, `${p.id}: manifest slot`);
-    if (HIDE_SLOTS.includes(p.slot)) assert.ok(Number.isInteger(entry.hideBit) && entry.hideBit >= 0 && entry.hideBit < 24, `${p.id}: hide bit`);
+    // Clothes, accessories and hats hide the skin under them; hats do it through the accessory mask.
+    if (HIDE_SLOTS.includes(p.slot) || p.slot === "hat") {
+      assert.ok(Number.isInteger(entry.hideBit) && entry.hideBit >= 0 && entry.hideBit < 24, `${p.id}: hide bit`);
+      assert.ok(HIDE_SLOTS.includes(entry.hideIn ?? entry.slot), `${p.id}: hides skin in a mask the body has`);
+    }
   }
-  // Hide bits are unique within a slot (each bit means one part).
-  for (const b of BODIES) for (const slot of HIDE_SLOTS) {
-    const bits = Object.values(MANIFEST.bodies[b.id].parts).filter((e) => e.slot === slot).map((e) => e.hideBit);
-    assert.equal(new Set(bits).size, bits.length, `${b.id}/${slot} hide bits`);
+  // Hide bits are unique within each mask (each bit means one part).
+  for (const b of BODIES) for (const mask of HIDE_SLOTS) {
+    const bits = Object.values(MANIFEST.bodies[b.id].parts).filter((e) => (e.hideIn ?? e.slot) === mask).map((e) => e.hideBit);
+    assert.equal(new Set(bits).size, bits.length, `${b.id}/${mask} hide bits`);
   }
 });
 
@@ -135,8 +149,8 @@ test("normalize: shapes come right after the skin, defaults are left out, unknow
   // Recipes made before shapes and accessories existed are untouched.
   assert.equal(normalizeRecipe(FULL), FULL);
   // Object form.
-  assert.equal(normalizeRecipe({ body: "male", skin: 2, shape: { build: "slim", height: "short" }, parts: { accessory: { id: "acc_fedora", color: 4 } } }),
-    "male;2;build=slim;height=short;top=top_tee:0;bottom=bottom_pants:0;accessory=acc_fedora:4");
+  assert.equal(normalizeRecipe({ body: "male", skin: 2, shape: { build: "slim", height: "short" }, parts: { accessory: { id: "acc_3d", color: 4 } } }),
+    "male;2;build=slim;height=short;top=top_tee:0;bottom=bottom_pants:0;accessory=acc_3d:4");
 });
 
 test("shapes: morph names and height scale", () => {
@@ -144,6 +158,17 @@ test("shapes: morph names and height scale", () => {
   assert.deepEqual(shapeMorphs(parseRecipe("female;1").shape), []);
   assert.equal(heightScale(parseRecipe("male;1;height=tall").shape), HEIGHTS.find((h) => h.id === "tall").scale);
   assert.equal(heightScale(parseRecipe("male;1").shape), 1);
+});
+
+test("normalize: hats saved under the old accessory slot move to the hat slot; an explicit hat wins", () => {
+  assert.equal(normalizeRecipe("female;3;accessory=acc_fedora:3"), "female;3;top=top_tee:0;bottom=bottom_pants:0;hat=acc_fedora:3");
+  assert.equal(normalizeRecipe("female;3;accessory=acc_fedora:3;accessory=acc_3d:1"),
+    "female;3;top=top_tee:0;bottom=bottom_pants:0;hat=acc_fedora:3;accessory=acc_3d:1");
+  assert.equal(normalizeRecipe("female;3;accessory=acc_fedora:3;hat=hat_newsboy:1"), "female;3;top=top_tee:0;bottom=bottom_pants:0;hat=hat_newsboy:1");
+  assert.equal(normalizeRecipe({ body: "male", skin: 0, parts: { accessory: { id: "acc_widehat", color: 2 } } }),
+    "male;0;top=top_tee:0;bottom=bottom_pants:0;hat=acc_widehat:2");
+  // Only moves the way `formerly` says: an accessory under hat= is dropped, not moved.
+  assert.equal(normalizeRecipe("male;1;hat=acc_3d:1"), "male;1;top=top_tee:0;bottom=bottom_pants:0");
 });
 
 test("normalize: the accessory slot is optional, last, and only takes accessories", () => {
@@ -261,7 +286,7 @@ test("resolveAppearance: a player has a recipe or a classic look; accessories ri
 
 test("resolveRecipe keeps the body shape (shapes are free) and swaps a locked accessory like any part", { skip: !LOCKED && "FV_UNLOCK_ALL=1" }, () => {
   const wanted = "female;2;build=athletic;face=angular;height=short;top=top_puffer:0;bottom=bottom_jeans:0;accessory=acc_mask:3";
-  assert.equal(resolveRecipe(null, wanted), "female;2;build=athletic;face=angular;height=short;top=top_puffer:0;bottom=bottom_jeans:0;accessory=acc_fedora:3");
+  assert.equal(resolveRecipe(null, wanted), "female;2;build=athletic;face=angular;height=short;top=top_puffer:0;bottom=bottom_jeans:0;accessory=acc_shades:3");
   assert.equal(resolveRecipe({ unlocks: ["acc_mask"] }, wanted), wanted);
 });
 

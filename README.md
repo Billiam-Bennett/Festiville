@@ -324,13 +324,13 @@ Both are on the join screen and in the in-game 👕 panel, with a live 3D previe
 
 ### Parts-based characters (the generator)
 
-The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the body shapes, the slots, every part (which bodies it fits, free or premium, its file), and the color palettes. There are 12 hairstyles, 3 eyebrow styles, 15 tops, 11 bottoms, 10 pairs of shoes and 7 accessories (hats, shades, a mask, gloves), and each body comes in 4 builds (average, slim, heavy, athletic), 4 faces (classic, round, angular, heart) and 3 heights. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so one animation set per body fits every combination.
+The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the body shapes, the slots, every part (which bodies it fits, free or premium, its file), and the color palettes. There are 20 hairstyles, 3 eyebrow styles, 18 tops, 14 bottoms, 16 pairs of shoes, 6 hats and 10 accessories (glasses, masks, gloves), and each body comes in 4 builds (average, slim, heavy, athletic), 4 faces (classic, round, angular, heart) and 3 heights. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so one animation set per body fits every combination.
 
 A player's look is stored as a short **recipe** string: body, skin tone, then `kind=id` for each body shape that isn't the default (build, face, height), then `slot=part:color` for each filled slot (colors are palette numbers):
 
 ```
 female;3;hair=hair_bob:4;eyebrows=brows_soft:1;top=top_tank:2;bottom=bottom_shorts:8;shoes=shoes_sneakers:0
-male;5;build=heavy;face=round;top=top_puffer:0;bottom=bottom_jeans:0;shoes=shoes_boots:0;accessory=acc_fedora:3
+male;5;build=heavy;face=round;top=top_puffer:0;bottom=bottom_jeans:0;shoes=shoes_boots:0;hat=acc_fedora:3;accessory=acc_3d:0
 ```
 
 The server cleans every recipe (`normalizeRecipe()`), swaps premium parts the account hasn't unlocked for the free default, saves it as the player's default, and syncs it to everyone. A player has either a recipe or a classic look; the classic look is kept too, as a fallback (see below). Quest givers and NPCs can wear a recipe: set `recipe` next to `look` in `shared/quests-data.js` (`randomRecipe(seededRandom("their-id"))` gives a random one that's the same on every screen).
@@ -351,7 +351,9 @@ client/assets/parts/male/…                the same for the male body
 - **Bones:** every file uses the same `mixamorig*` bone names and rest pose as that body's `body.glb`. The game takes each part's skinned meshes and rebinds them to the player's body bones by name.
 - **Scale:** meters. The two bodies keep their real heights (1.59 m and 1.73 m).
 - **Colors:** hair and eyebrows are exported light grey and take the hair color swatches. Clothes keep their own printed colors and patterns (`tint: false` in `shared/parts.js`, so the builder shows no swatches for them). The skin tone tints the body.
-- **Skin under clothes:** `body.glb` stores a mask per clothing slot (top, bottom, shoes, accessory) saying which skin each part covers, so the game hides that skin while it's worn and nothing pokes through.
+- **Skin under clothes:** `body.glb` stores a mask per clothing slot (top, bottom, shoes, accessory) saying which skin each part covers, so the game hides that skin while it's worn and nothing pokes through. Hats use spare bits of the accessory mask (`"hideIn": "accessory"` in the manifest) for the scalp under them.
+- **Hair under hats:** hair would poke through a hat's crown, so while a hat is worn the game tucks the hair under it: every hair vertex above the brim is pulled inside the hat's inner surface (found by casting rays from above the head bone; cached per hair and hat). Any new hat works without extra files.
+- **Hats used to be accessories:** recipes saved with a hat in the `accessory` slot (`accessory=acc_fedora:3`) load with it in the `hat` slot (`formerly` in `PART_SLOTS`), and the hat ids keep their `acc_` prefix so unlocks and shop prices still match.
 - **Body shapes:** builds and faces are morph targets in `body.glb` (`build_heavy`, `face_round`, …; quantized and sparse, about 0.1–0.25 MB each). The game bakes the chosen ones into the body once and **refits every part to the shaped body** when it loads (each part vertex follows the nearest body surface), so parts are exported once per body, not once per shape. Height just scales the avatar. To add a shape: add it to `SHAPES` in `scripts/make-parts.py` (MPFB macros and/or targets), re-run it, then add it to `BUILDS` / `FACES` in `shared/parts.js`.
 - **Outfit halves:** some tops and bottoms are halves of MakeHuman's one-piece system outfits, split at the hips by `make-parts.py` (entries like `("jeans", "male_casualsuit04", "lower")`).
 - **Animations:** each body gets the classic characters' Idle/Walk/Run/Dance plus the emotes (CC0 clips from Quaternius' Universal Animation Library and KayKit Character Animations, and a few made in the script), all re-fitted to its skeleton by one command:
