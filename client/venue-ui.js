@@ -4,18 +4,22 @@
 //   • Waypoint: a white light column in the world plus a marker (or rim arrow) on the minimap.
 //   • Minimap: top-right, centered on you, north up. Tap it (or press M) for the full map.
 //   • Full map: the whole festival with labels and a vendor directory. Drag to pan, scroll/pinch to zoom.
+//     Player camps show on both maps (yours pink, your crew's cyan, ♪ where a PA is playing), and
+//     "⛺ My camp" points a waypoint back to your camp.
 //   • Live listings: the server sends every stall's current listing when you join ("vendors") and
 //     each edit as a vendor saves it ("vendor"), so menus, schedules and stall signs update in place.
 import { VENDORS, ZONE_LABELS, FENCE, vendorById, vendorFront } from "../shared/venue.js";
 import { upcoming, formatDates, formatPrice } from "../shared/listings.js";
 import { dist } from "../shared/quests-data.js";
 import { drawMap, fitCanvas } from "./map.js";
+import { plotById } from "../shared/economy.js";
 
 const BROWSE_RANGE = 5;       // meters from a stall's counter to get the "Browse" button
 const ARRIVE_RANGE = 3.5;     // meters from a waypoint that count as arriving
 const MINIMAP_RADIUS = 45;    // meters shown from the center to the rim of the minimap
 
-export function setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, quests, myAvatar }) {
+// camps: client/camps.js (optional), so the maps can show player camps.
+export function setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, quests, myAvatar, camps }) {
   const room = mp.room;
   const myId = room.sessionId;
   const $ = (id) => document.getElementById(id);
@@ -53,7 +57,7 @@ export function setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, qu
   $("vd-go").onclick = () => {
     if (!cardVendor) return;
     if (waypoint?.id === cardVendor.id) clearWaypoint();
-    else { setWaypoint(cardVendor); $("vendor").hidden = true; closeBigMap(); }
+    else { setVendorWaypoint(cardVendor); $("vendor").hidden = true; closeBigMap(); }
     syncGoButton();
   };
 
@@ -80,14 +84,18 @@ export function setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, qu
   room.send("vendors");   // ask for the current listings now that we're listening
 
   // ---------- Waypoint ----------
+  // { id, name, x, z, vendor? }: a vendor waypoint opens their card when you arrive.
   let waypoint = null;
   const wpBeacon = makeBeacon(THREE);
-  function setWaypoint(v) {
-    const f = vendorFront(v);
-    waypoint = { id: v.id, name: v.name, x: f.x, z: f.z };
-    wpBeacon.position.set(f.x, 0, f.z);
+  function setWaypoint(target) {
+    waypoint = target;
+    wpBeacon.position.set(target.x, 0, target.z);
     scene.add(wpBeacon);
-    toast(`Waypoint set: ${v.name}. Follow the white light.`);
+    toast(`Waypoint set: ${target.name}. Follow the white light.`);
+  }
+  function setVendorWaypoint(v) {
+    const f = vendorFront(v);
+    setWaypoint({ id: v.id, name: v.name, x: f.x, z: f.z, vendor: true });
   }
   function clearWaypoint() { waypoint = null; scene.remove(wpBeacon); }
 
@@ -123,22 +131,50 @@ export function setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, qu
   $("zoom-out").onclick = () => rig.zoomBy(1.4);
   $("map-btn").onclick = () => toggleBigMap();
 
+  // Your camp: the one you own, else a crew camp you're part of.
+  const myName = () => room.state.players.get(myId)?.name ?? "";
+  const isMine = (c) => c.id === myName().toLowerCase() || (c.mates ?? []).includes(myName());
+  const myCamp = () => {
+    const all = camps?.all() ?? [];
+    return all.find((c) => c.id === myName().toLowerCase()) ?? all.find(isMine) ?? null;
+  };
+  // How someone else's camp is named on the full map.
+  const campName = (c) => (c.mates?.length ? `${c.owner} & crew` : `${c.owner}'s camp`);
+
   function mapData() {
     const me = myAvatar();
     const myCrew = room.state.players.get(myId)?.crewId;
     const crewSize = myCrew ? (room.state.crews.get(myCrew)?.members.split(",").filter(Boolean).length ?? 0) : 0;
     const players = [];
+    const crewNames = new Set();
     room.state.players.forEach((p, id) => {
       if (id === myId) return;
       const obj = mp.avatarOf(id);
       const at = obj?.position ?? p;
-      players.push({ x: at.x, z: at.z, crew: crewSize > 1 && p.crewId === myCrew });
+      const crew = crewSize > 1 && p.crewId === myCrew;
+      if (crew) crewNames.add(p.name);
+      players.push({ x: at.x, z: at.z, crew });
     });
+    const campList = (camps?.all() ?? []).map((c) => {
+      const plot = plotById(c.plot);
+      if (!plot) return null;
+      const kind = isMine(c) ? "mine" : crewNames.has(c.owner) || (c.mates ?? []).some((n) => crewNames.has(n)) ? "crew" : "";
+      return { x: c.x, z: c.z, w: plot.w, d: plot.d, kind, music: c.items.includes("pa"), label: kind === "mine" ? (c.id === myName().toLowerCase() ? "Your camp" : `Crew camp (${c.owner})`) : campName(c) };
+    }).filter(Boolean);
     return {
       me: me ? { x: me.position.x, z: me.position.z, rotY: me.rotation.y } : null,
-      players, markers: quests?.markers() ?? [], waypoint,
+      players, markers: quests?.markers() ?? [], waypoint, camps: campList,
     };
   }
+
+  // "⛺ My camp" on the full map: center on it and point a waypoint there.
+  function goToCamp() {
+    const c = myCamp();
+    if (!c) return toast("You don't have a camp yet. Claim one in the Campground from 🪙 Shop → Camp.");
+    big.cx = c.x; big.cz = c.z; big.scale = Math.max(big.scale, 6);
+    setWaypoint({ id: `camp:${c.id}`, name: c.id === myName().toLowerCase() ? "your camp" : `${c.owner}'s crew camp`, x: c.x, z: c.z });
+  }
+  $("bm-camp").onclick = goToCamp;
 
   // ---------- Full map ----------
   const big = { open: false, cx: 0, cz: 0, scale: 3, fit: 3 };
@@ -277,12 +313,13 @@ export function setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, qu
     $("vprompt").hidden = !nearVendor || !$("prompt").hidden || sheetOpen || big.open;
     if (nearVendor) $("vprompt").textContent = `Browse ${nearVendor.name}`;
 
-    // Arriving at a waypoint opens that vendor.
+    // Arriving at a waypoint: a vendor's opens their card.
     if (waypoint && dist(here, waypoint) < ARRIVE_RANGE) {
-      const v = vendorById(waypoint.id);
+      const w = waypoint;
       clearWaypoint();
-      toast(`You made it to ${v.name}!`);
-      openVendor(v);
+      toast(`You made it to ${w.name}!`);
+      const v = w.vendor && vendorById(w.id);
+      if (v) openVendor(v);
     }
     wpBeacon.rotation.y += 0.02;
 
@@ -300,7 +337,7 @@ export function setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, qu
     }
   }
 
-  return { update, openVendor };
+  return { update, openVendor, goToCamp };
 }
 
 // Does the line segment a→b pass through the box? (slab method)

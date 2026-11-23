@@ -8,10 +8,12 @@ const C = {
   bg: "#1b1226", grass: "#355c2f", dirt: "#8a6a45", plaza: "#9b7b52", lane: "#a58556",
   camp: "rgba(255,255,255,.07)", stage: "#141018", fence: "rgba(235,235,245,.8)",
   label: "#fff", me: "#ff4fa3", player: "#ffffff", crew: "#4fe3ff", giver: "#ffd36b", waypoint: "#ffffff",
+  campMine: "rgba(255,79,163,.55)", campCrew: "rgba(79,227,255,.45)", campOther: "rgba(255,240,210,.22)",
 };
 
 // view: { cx, cz, scale (px per meter), w, h (CSS px), labels, circle }
-// data: { me, players: [{ x, z, crew }], markers: [{ x, z, color }], waypoint: { x, z } | null }
+// data: { me, players: [{ x, z, crew }], markers: [{ x, z, color }], waypoint: { x, z } | null,
+//         camps: [{ x, z, w, d, kind: "mine" | "crew" | "", music, label }] }
 // layout / vendors: what to draw (the builder passes its draft; the game uses the current layout).
 export function drawMap(ctx, view, data, layout = LAYOUT, vendors = VENDORS) {
   const { w, h, scale } = view;
@@ -41,6 +43,19 @@ export function drawMap(ctx, view, data, layout = LAYOUT, vendors = VENDORS) {
     ctx.beginPath(); ctx.arc(X(r.x), Z(r.z), r.r * scale, 0, Math.PI * 2); ctx.stroke();
   }
   for (const st of items.filter((i) => i.type === "stage")) rotRect(st, TYPES.stage.size(st), C.stage, "#ff4fa3");
+  // Player camps: everyone's faintly, your crew's in cyan, yours in pink; ♪ where a PA is playing.
+  const camps = [...(data.camps ?? [])].sort((a, b) => (a.kind ? 1 : 0) - (b.kind ? 1 : 0));   // yours on top
+  for (const c of camps) {
+    const fill = c.kind === "mine" ? C.campMine : c.kind === "crew" ? C.campCrew : C.campOther;
+    const pw = Math.max(3, c.w * scale), pd = Math.max(3, c.d * scale);
+    ctx.fillStyle = fill; ctx.fillRect(X(c.x) - pw / 2, Z(c.z) - pd / 2, pw, pd);
+    if (c.kind) { ctx.strokeStyle = c.kind === "mine" ? C.me : C.crew; ctx.lineWidth = 1.5; ctx.strokeRect(X(c.x) - pw / 2, Z(c.z) - pd / 2, pw, pd); }
+    if (c.music && scale >= 1.5) {
+      ctx.font = `700 ${Math.round(Math.min(16, Math.max(9, scale * 2.4)))}px system-ui, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff";
+      ctx.fillText("♪", X(c.x), Z(c.z));
+    }
+  }
   const byVendor = new Map(vendors.map((v) => [v.id, v]));
   for (const it of items) {
     if (it.type === "stall") rotRect(it, TYPES.stall.size(it), byVendor.get(it.vendor)?.color ?? it.color ?? "#888");
@@ -88,6 +103,11 @@ export function drawMap(ctx, view, data, layout = LAYOUT, vendors = VENDORS) {
     // Stall names once there's room for them, on the side away from the counter.
     if (scale >= 5) for (const v of vendors) label(v.name, v.x - v.facing.x * 4.6, v.z - v.facing.z * 4.4, 11, C.label, v.facing.x > 0.5 ? "right" : v.facing.x < -0.5 ? "left" : "center");
     if (scale >= 3.2) for (const g of GIVERS) label(g.name, g.x, g.z - 2.6, 11, C.giver);
+    // Camp names: yours (and your crew's) once the Campground is big enough to read, everyone's up close.
+    for (const c of data.camps ?? []) {
+      if (!c.label || (scale < 6 && !c.kind) || scale < 2.4) continue;
+      label(c.label, c.x, c.z - c.d / 2 - 1.6, 11, c.kind === "mine" ? "#ffc2e2" : c.kind === "crew" ? "#bff4ff" : "#f4efe2");
+    }
   }
 
   // Waypoint: a ringed marker, or an arrow on the rim of the minimap when it's out of view.

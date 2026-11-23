@@ -383,12 +383,12 @@ $("join-form").addEventListener("submit", async (e) => {
     mp.room.onMessage("layout", () => quests.toast("The festival layout was just updated. Refresh the page to see the new grounds.", "big", 10000));
     mp.room.onLeave((code) => showDisconnected(code));
     quests = setupQuests({ THREE, scene, camera, renderer, mp, makeAvatar });
-    venue = setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, quests, myAvatar: () => me });
+    camps = setupCamps({ THREE, scene, mp, listener });   // before the venue, so the maps can show camps
+    applySound();
+    venue = setupVenue({ THREE, scene, camera, renderer, mp, stalls, rig, quests, myAvatar: () => me, camps });
     chat = setupChat({ THREE, mp, quests });
     moderation = setupModeration({ mp, quests, chat, account });
     setupReports({ mp, quests, isStaff: moderation.isStaff });
-    camps = setupCamps({ THREE, scene, mp, listener });
-    applySound();
     shop = setupShop({ mp, toast: quests.toast, account, camps, me: () => mp.room.state.players.get(mp.room.sessionId) });
     emotes?.dispose();
     emotes = setupEmotes({ mp, button: $("dance") });
