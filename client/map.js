@@ -106,7 +106,8 @@ export function drawMap(ctx, view, data, layout = LAYOUT, vendors = VENDORS) {
     // Camp names: yours (and your crew's) once the Campground is big enough to read, everyone's up close.
     for (const c of data.camps ?? []) {
       if (!c.label || (scale < 6 && !c.kind) || scale < 2.4) continue;
-      label(c.label, c.x, c.z - c.d / 2 - 1.6, 11, c.kind === "mine" ? "#ffc2e2" : c.kind === "crew" ? "#bff4ff" : "#f4efe2");
+      // Below the spot: the area's own name sits along its top edge, where the first row of camps is.
+      label(c.label, c.x, c.z + c.d / 2 + 1.8, 11, c.kind === "mine" ? "#ffc2e2" : c.kind === "crew" ? "#bff4ff" : "#f4efe2");
     }
   }
 

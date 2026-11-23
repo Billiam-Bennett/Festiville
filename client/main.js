@@ -271,7 +271,7 @@ let shop = null;
 let hunt = null;
 let removedText = "";   // why staff removed you, if they did
 // Add ?debug to the URL to poke at the game from the browser console (window.__gs).
-if (params.has("debug")) window.__gs = { THREE, scene, camera, listener, get mp() { return mp; }, get camps() { return camps; } };
+if (params.has("debug")) window.__gs = { THREE, scene, camera, listener, get mp() { return mp; }, get camps() { return camps; }, get hunt() { return hunt; } };
 
 // --- Change your look mid-game (the 👕 button) ---
 let lkIndex = 0, lkChosen = new Set(), lkMode = "classic";

@@ -4,8 +4,10 @@
 FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production PORT=2567 FV_DATA_DIR=/app/data
-COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+# The lockfile pins exact versions; .npmrc keeps npm from pulling in transports we don't use
+# (one of them can only be fetched with git, which this image doesn't have).
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY server ./server
 COPY shared ./shared
 COPY client ./client
