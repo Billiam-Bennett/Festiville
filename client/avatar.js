@@ -16,6 +16,8 @@
 //   4b. Body shapes (build, face): body.glb holds them as morph targets. The chosen ones are baked into
 //      plain geometry once (no morphs on the GPU), and each part is refit to the shaped body by moving
 //      its vertices with the body surface nearest to them. Height just scales the avatar.
+//   4c. Hats: hair would poke through the crown, so while a hat is worn the hair is tucked under it
+//      (each hair vertex above the brim is pulled inside the hat's inner surface; cached per hair+hat).
 //   5. Animate with the body's one shared set in parts/<body>/anims.json, through rigAvatar() like classic characters.
 //
 // Everything downloaded is cached and shared: each glb is fetched once, geometry and textures are
@@ -42,6 +44,7 @@ export function createPartsKit(THREE, { base = "./assets/" } = {}) {
   const hiding = new Map();       // "materialUuid|t,b,s,a" -> body material that hides covered skin (shared)
   const shaped = new Map();       // "geometryUuid|morphs" -> body or part geometry baked to a shape (shared)
   const fitters = new Map();      // "body|morphs" -> refits part geometry to that body shape
+  const crowns = new Map();       // "hat mesh uuids|morphs" -> the hat's inner surface, for tucking hair under it
   const warned = new Set();
   const anims = new Map();        // body id -> Promise<array of clip JSON>
   let manifest = null;            // Promise<manifest json | null>
@@ -76,7 +79,7 @@ export function createPartsKit(THREE, { base = "./assets/" } = {}) {
     const bits = HIDE_SLOTS.map(() => 0);
     for (const p of worn) {
       const entry = files[partModel(body, p.id).split("/").pop().replace(/\.glb$/, "")];
-      const s = HIDE_SLOTS.indexOf(entry?.slot);
+      const s = HIDE_SLOTS.indexOf(entry?.hideIn ?? entry?.slot);   // hats hide skin through the accessory mask
       if (s >= 0 && Number.isInteger(entry.hideBit)) bits[s] |= 1 << entry.hideBit;
     }
     return bits;
@@ -277,6 +280,112 @@ vFvHide = ((fvMask.x & fvWorn.x) | (fvMask.y & fvWorn.y) | (fvMask.z & fvWorn.z)
     return fit;
   }
 
+  // ---------- Hair under hats ----------
+  // The hat's inner surface as seen from a point at its brim level: the distance to the hat along a grid
+  // of directions (azimuth × elevation, upper half only), all in bind space. geomOf(src) = the hat mesh's
+  // geometry as worn (refit to the body shape).
+  const AZ = 48, EL = 16, MARGIN = 0.006, BAND = 0.03;
+  function crownOf(gltf, geomOf, key) {
+    if (crowns.has(key)) return crowns.get(key);
+    const tris = [], v = new THREE.Vector3();
+    let head = null;   // the head bone's rest position (bind space): the rays start right above it, inside the head
+    gltf.scene.traverse((src) => {
+      if (!src.isSkinnedMesh) return;
+      const hb = src.skeleton.bones.findIndex((bone) => boneKey(bone.name) === "Head");
+      if (hb >= 0 && !head) head = new THREE.Vector3().setFromMatrixPosition(src.skeleton.boneInverses[hb].clone().invert());
+      const g = geomOf(src), p = g.attributes.position;
+      const w = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(src.bindMatrix);
+        w[i * 3] = v.x; w[i * 3 + 1] = v.y; w[i * 3 + 2] = v.z;
+      }
+      const idx = g.index ? g.index.array : Array.from({ length: p.count }, (_, i) => i);
+      for (let i = 0; i + 2 < idx.length; i += 3) tris.push([idx[i], idx[i + 1], idx[i + 2]].map((k) => w.subarray(k * 3, k * 3 + 3)));
+    });
+    if (!tris.length) { crowns.set(key, null); return null; }
+    if (!head) { crowns.set(key, null); return null; }
+    // Rays start above the head bone, at the hat's brim level: the median, over directions around the head, of
+    // the hat's lowest point in that direction (so a dangling pompom or a drooping brim doesn't drag it down).
+    const cx = head.x, cz = head.z, low = new Array(24).fill(Infinity);
+    for (const t of tris) for (const q of t) {
+      const k = Math.floor(((Math.atan2(q[2] - cz, q[0] - cx) / (Math.PI * 2) + 1) % 1) * low.length);
+      low[k] = Math.min(low[k], q[1]);
+    }
+    const lows = low.filter(Number.isFinite).sort((a, b) => a - b);
+    const c = new THREE.Vector3(cx, lows[Math.floor(lows.length / 2)], cz);
+    const dist = new Float32Array(AZ * EL).fill(Infinity);
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), pv = new THREE.Vector3(), tv = new THREE.Vector3(), qv = new THREE.Vector3(), d = new THREE.Vector3();
+    for (let a = 0; a < AZ; a++) for (let e = 0; e < EL; e++) {
+      const az = (a / AZ) * Math.PI * 2, el = (e / (EL - 1)) * Math.PI / 2;
+      d.set(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az));
+      let best = Infinity;
+      for (const [p0, p1, p2] of tris) {   // Möller–Trumbore, both faces
+        e1.set(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+        e2.set(p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]);
+        pv.crossVectors(d, e2);
+        const det = e1.dot(pv);
+        if (Math.abs(det) < 1e-12) continue;
+        tv.set(c.x - p0[0], c.y - p0[1], c.z - p0[2]);
+        const u = tv.dot(pv) / det;
+        if (u < 0 || u > 1) continue;
+        qv.crossVectors(tv, e1);
+        const w = d.dot(qv) / det;
+        if (w < 0 || u + w > 1) continue;
+        const t = e2.dot(qv) / det;
+        if (t > 1e-4 && t < best) best = t;
+      }
+      dist[a * EL + e] = best;
+    }
+    const crown = { key, c, dist };
+    crowns.set(key, crown);
+    return crown;
+  }
+
+  // Distance to the hat's inner surface in direction (x, y, z) from the crown point (Infinity = open there).
+  function crownDistance(crown, x, y, z) {
+    const az = (Math.atan2(z, x) / (Math.PI * 2) + 1) % 1 * AZ;
+    const el = Math.max(0, Math.asin(Math.max(-1, Math.min(1, y / Math.hypot(x, y, z))))) / (Math.PI / 2) * (EL - 1);
+    const a0 = Math.floor(az), e0 = Math.min(EL - 2, Math.floor(el)), fa = az - a0, fe = el - e0;
+    let sum = 0, wsum = 0, nearest = Infinity;
+    for (const [da, de, w] of [[0, 0, (1 - fa) * (1 - fe)], [1, 0, fa * (1 - fe)], [0, 1, (1 - fa) * fe], [1, 1, fa * fe]]) {
+      const t = crown.dist[((a0 + da) % AZ) * EL + e0 + de];
+      if (!Number.isFinite(t)) continue;
+      sum += t * w; wsum += w; nearest = Math.min(nearest, t);
+    }
+    return wsum > 0.5 ? sum / wsum : nearest;   // mostly open around here: be conservative
+  }
+
+  // Hair geometry with every vertex above the brim pulled inside the hat (tapering off just below it).
+  function underHat(src, g, crown) {
+    const key = `${g.uuid}|${src.uuid}|${crown.key}`;
+    if (shaped.has(key)) return shaped.get(key);
+    const p = g.attributes.position, c = crown.c, w = new THREE.Vector3();
+    const d = new Float32Array(p.count * 3);
+    let moved = 0;
+    for (let i = 0; i < p.count; i++) {
+      w.fromBufferAttribute(p, i).applyMatrix4(src.bindMatrix);
+      const k = w.y >= c.y ? 1 : THREE.MathUtils.smoothstep(w.y, c.y - BAND, c.y);
+      if (!k) continue;
+      const dx = w.x - c.x, dy = Math.max(0, w.y - c.y), dz = w.z - c.z, r = Math.hypot(dx, dy, dz);
+      if (r < 1e-6) continue;
+      const lim = crownDistance(crown, dx, dy, dz) - MARGIN;
+      if (!(r > lim)) continue;   // inside the hat already (or open in this direction)
+      const s = (lim / r - 1) * k;
+      d[i * 3] = dx * s; d[i * 3 + 1] = dy * s; d[i * 3 + 2] = dz * s;
+      moved++;
+    }
+    if (!moved) { shaped.set(key, g); return g; }
+    // The offsets are in bind space; turn them into the mesh's own space.
+    const toLocal = new THREE.Matrix3().setFromMatrix4(src.bindMatrixInverse), v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      v.set(d[i * 3], d[i * 3 + 1], d[i * 3 + 2]).applyMatrix3(toLocal);
+      d[i * 3] = v.x; d[i * 3 + 1] = v.y; d[i * 3 + 2] = v.z;
+    }
+    const out = withPositions(g, d, null);
+    shaped.set(key, out);
+    return out;
+  }
+
   // Is this body's base file available? (The picker uses it to explain a fallback.)
   const hasBody = async (body) => !!(await loadBody(body));
 
@@ -297,7 +406,7 @@ vFvHide = ((fvMask.x & fvWorn.x) | (fvMask.y & fvWorn.y) | (fvMask.z & fvWorn.z)
   }
 
   // Copy a part's skinned meshes onto `model`, bound to its bones. Returns how many meshes were added.
-  function attachPart(gltf, model, bones, hex, label, fit) {
+  function attachPart(gltf, model, bones, hex, label, geomOf) {
     const rootBone = bones.get("Hips") ?? [...bones.values()][0];
     let added = 0;
     gltf.scene.traverse((src) => {
@@ -309,7 +418,7 @@ vFvHide = ((fvMask.x & fvWorn.x) | (fvMask.y & fvWorn.y) | (fvMask.z & fvWorn.z)
         return rootBone;
       });
       const mesh = src.clone();   // shares geometry; gets its own skeleton below
-      if (fit) mesh.geometry = fit(src);   // refit to the body's build / face (cached per shape)
+      if (geomOf) mesh.geometry = geomOf(src);   // refit to the body's build / face, tucked under a hat (cached)
       // The part's boneInverses describe the same rest pose as the body (same rig), so its vertices
       // land on the body. bindMode "attached" means the mesh's own placement doesn't matter.
       mesh.bind(new THREE.Skeleton(mapped, src.skeleton.boneInverses.map((m) => m.clone())), src.bindMatrix.clone());
@@ -346,7 +455,19 @@ vFvHide = ((fvMask.x & fvWorn.x) | (fvMask.y & fvWorn.y) | (fvMask.z & fvWorn.z)
     const bones = new Map();
     model.traverse((n) => { if (n.isBone && !bones.has(boneKey(n.name))) bones.set(boneKey(n.name), n); });
     const fit = morphs.length ? fitterFor(kit, morphs) : null;
-    ids.forEach((p, i) => { if (partFiles[i]) attachPart(partFiles[i], model, bones, partTintHex(p.id, p.slot, p.color), p.id, fit); });
+    const geomOf = (src) => (fit ? fit(src) : src.geometry);
+    const hatAt = ids.findIndex((p, i) => p.slot === "hat" && partFiles[i]);
+    let crown = null;
+    if (hatAt >= 0) {
+      const hat = partFiles[hatAt], uuids = [];
+      hat.scene.traverse((n) => { if (n.isSkinnedMesh) uuids.push(n.uuid); });
+      crown = crownOf(hat, geomOf, `${uuids}|${morphs}`);
+    }
+    ids.forEach((p, i) => {
+      if (!partFiles[i]) return;
+      const shape = crown && p.slot === "hair" ? (src) => underHat(src, geomOf(src), crown) : fit && geomOf;
+      attachPart(partFiles[i], model, bones, partTintHex(p.id, p.slot, p.color), p.id, shape);
+    });
 
     const root = rigAvatar(THREE, model, kit.clips, profile, kit.height * tall);
     root.userData.recipe = recipe;

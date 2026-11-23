@@ -1,5 +1,5 @@
 // Parts-based characters: players build their own look from a base body (with a build, face and
-// height) plus hair, eyebrows, clothes and an accessory. Shared so the server can check a player's recipe (server/entitlements.js) and the
+// height) plus hair, eyebrows, clothes, a hat, an accessory and a bag. Shared so the server can check a player's recipe (server/entitlements.js) and the
 // browser can build it (client/avatar.js) and offer it in the picker (client/look-builder.js).
 //
 // The art comes from MakeHuman (MPFB in Blender, CC0 assets). Every file is rigged to ONE shared
@@ -83,21 +83,27 @@ export const heightScale = (shape = {}) => HEIGHTS.find((h) => h.id === shape.he
 
 // The slots, in recipe order. required: a recipe always has one (the first free part that fits the
 // body is the default). emptyChance: how often randomRecipe() leaves an optional slot empty.
+// formerly: slots this slot's parts used to live in; a recipe that still names one of its parts under
+// the old slot is moved over (hats were in "accessory" until they got their own slot).
 export const PART_SLOTS = [
   { id: "hair",     name: "Hair",     required: false, colors: HAIR_COLORS,  emptyChance: 0.1 },
   { id: "eyebrows", name: "Eyebrows", required: false, colors: HAIR_COLORS,  emptyChance: 0.05 },
   { id: "top",      name: "Top",      required: true,  colors: CLOTH_COLORS },
   { id: "bottom",   name: "Bottom",   required: true,  colors: CLOTH_COLORS },
   { id: "shoes",    name: "Shoes",    required: false, colors: CLOTH_COLORS, emptyChance: 0 },
+  { id: "hat",      name: "Hat",      required: false, colors: CLOTH_COLORS, emptyChance: 0.7, formerly: ["accessory"] },
   { id: "accessory", name: "Accessory", required: false, colors: CLOTH_COLORS, emptyChance: 0.6 },
+  { id: "bag",      name: "Bag",      required: false, colors: CLOTH_COLORS, emptyChance: 0.75 },
 ];
 
 // The catalog. Files come from scripts/make-parts.py (MakeHuman CC0 assets): `file` is the exported
 // file name in client/assets/parts/<body>/ (a string, or { female, male } when each body uses its own).
 // The first free part in each required slot (per body) is that slot's default.
+// license: every part is CC0 unless it says otherwise. A "CC-BY" part also names its `author` (and the
+// original's, for an adaptation), and must be credited in client/assets/parts/CREDITS.md (a test checks).
 // tint: false = the part keeps its own printed colors/pattern (no swatches). Hair and eyebrows are
-// exported light grey, so they take the hair color swatches. Accessories are plain (white / grey felt)
-// and take the cloth swatches.
+// exported light grey, so they take the hair color swatches. Plain hats and accessories (white, grey
+// felt) take the cloth swatches; printed ones (3D glasses, leopard frames…) keep their own colors.
 const BOTH = ["female", "male"];
 export const PARTS = [
   // Hair
@@ -113,6 +119,14 @@ export const PARTS = [
   { id: "hair_frbraid",  name: "French braid", slot: "hair",     bodies: BOTH, tier: "premium", file: "elvs_french_braid_variation" },
   { id: "hair_headband", name: "Headband",     slot: "hair",     bodies: BOTH, tier: "premium", file: "sonntag78_blond_with_headband" },
   { id: "hair_afro",     name: "Afro",         slot: "hair",     bodies: BOTH, tier: "premium", file: "afro01" },
+  { id: "hair_bangsbob", name: "Bob with bangs", slot: "hair",   bodies: BOTH, tier: "free",    file: "toigo_blunt_bob_with_bangs" },
+  { id: "hair_invbob",   name: "Inverted bob", slot: "hair",     bodies: BOTH, tier: "free",    file: "toigo_inverted_bob" },
+  { id: "hair_short6",   name: "Swept short",  slot: "hair",     bodies: BOTH, tier: "free",    file: "culturalibre_hair_06" },
+  { id: "hair_shaggy",   name: "Shaggy",       slot: "hair",     bodies: BOTH, tier: "free",    file: "cortu_shaggy_green_hair" },
+  { id: "hair_twinbraid",name: "Double braid", slot: "hair",     bodies: BOTH, tier: "free",    file: "elvs_double_mh_braid" },
+  { id: "hair_braidbun", name: "Braided bun",  slot: "hair",     bodies: BOTH, tier: "free",    file: "elvs_reverse_french_braid_bun" },
+  { id: "hair_anime",    name: "Anime",        slot: "hair",     bodies: BOTH, tier: "premium", file: "learning_anime_hair" },
+  { id: "hair_cloud",    name: "Curly cloud",  slot: "hair",     bodies: BOTH, tier: "premium", file: "cortu_strawberry_cloud_hair" },
   // Eyebrows
   { id: "brows_soft",    name: "Soft",         slot: "eyebrows", bodies: BOTH, tier: "free",    file: "eyebrow001" },
   { id: "brows_arched",  name: "Arched",       slot: "eyebrows", bodies: BOTH, tier: "free",    file: "eyebrow006" },
@@ -135,6 +149,9 @@ export const PARTS = [
   { id: "top_labcoat",   name: "Long coat",    slot: "top",      bodies: BOTH, tier: "free",    tint: false,
     file: { female: "crude_lab_coat_open_female", male: "male_crude_labcoat" } },
   { id: "top_suit",      name: "Suit jacket",  slot: "top",      bodies: BOTH, tier: "premium", file: "suit_jacket", tint: false },
+  { id: "top_bodice",    name: "Bodice top",   slot: "top",      bodies: ["female"], tier: "free", file: "toigo_bodice-style_top", tint: false },
+  { id: "top_pinksuit",  name: "Pink blazer",  slot: "top",      bodies: BOTH, tier: "free",    file: "pink_suit_jacket", tint: false },
+  { id: "top_tux",       name: "White dinner jacket", slot: "top", bodies: BOTH, tier: "premium", file: "dinner_jacket", tint: false },
   // Bottoms
   { id: "bottom_pants",  name: "Black pants",  slot: "bottom",   bodies: BOTH, tier: "free",    file: "toigo_wool_pants", tint: false },
   { id: "bottom_shorts", name: "Jean shorts",  slot: "bottom",   bodies: BOTH, tier: "free",    file: "cortu_jeans_shorts", tint: false },
@@ -147,6 +164,9 @@ export const PARTS = [
   { id: "bottom_leggings", name: "Leggings",   slot: "bottom",   bodies: BOTH, tier: "free",    file: "leggings", tint: false },
   { id: "bottom_belted", name: "Belted shorts", slot: "bottom",  bodies: BOTH, tier: "free",    file: "belted_shorts", tint: false },
   { id: "bottom_pencil", name: "Pencil skirt", slot: "bottom",   bodies: BOTH, tier: "free",    file: "pencil_skirt", tint: false },
+  { id: "bottom_floral", name: "Floral skirt", slot: "bottom",   bodies: BOTH, tier: "free",    file: "toigo_skirt_with_lace_ruffle", tint: false },
+  { id: "bottom_tiered", name: "Tiered skirt", slot: "bottom",   bodies: BOTH, tier: "free",    file: "toigo_tiered_skirt", tint: false },
+  { id: "bottom_pinksuit", name: "Pink trousers", slot: "bottom", bodies: BOTH, tier: "free",   file: "pink_suit_trousers", tint: false },
   // Shoes
   { id: "shoes_sneakers",name: "Brown sneakers", slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes01", tint: false },
   { id: "shoes_grey",    name: "Grey sneakers",  slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes05", tint: false },
@@ -158,14 +178,39 @@ export const PARTS = [
   { id: "shoes_flats",   name: "Flats",          slot: "shoes",  bodies: BOTH, tier: "free",    file: "toigo_flats", tint: false },
   { id: "shoes_platform",name: "Go-go platforms", slot: "shoes", bodies: BOTH, tier: "premium", file: "scailman_gogo_platform_boots", tint: false },
   { id: "shoes_tall",    name: "Tall boots",     slot: "shoes",  bodies: BOTH, tier: "premium", file: "culturalibre_male_boots", tint: false },
+  { id: "shoes_bowflats",name: "Bow flats",      slot: "shoes",  bodies: BOTH, tier: "free",    file: "toigo_ballet_flats_with_bows", tint: false },
+  { id: "shoes_tbar",    name: "T-bar shoes",    slot: "shoes",  bodies: BOTH, tier: "free",    file: "cortu_t-bar", tint: false },
+  { id: "shoes_cuffed",  name: "Cuffed boots",   slot: "shoes",  bodies: BOTH, tier: "free",    file: "grinsegold_female_pirate_boots", tint: false },
+  { id: "shoes_rain",    name: "Rain boots",     slot: "shoes",  bodies: BOTH, tier: "free",    file: "scailman_semitransparent_water_boots", tint: false },
+  { id: "shoes_booties", name: "Stiletto booties", slot: "shoes", bodies: BOTH, tier: "premium", file: "toigo_stiletto_booties", tint: false },
+  { id: "shoes_overknee",name: "Over-knee boots", slot: "shoes", bodies: BOTH, tier: "premium", file: "cortu_floppy_overknee_shoes", tint: false },
+  // Hats (ids keep the acc_ prefix: hats were accessories before they got their own slot)
+  { id: "acc_fedora",    name: "Fedora",         slot: "hat", bodies: BOTH, tier: "free",    file: "fedora01" },
+  { id: "acc_fedoratilt",name: "Tilted fedora",  slot: "hat", bodies: BOTH, tier: "free",    file: "fedora_cocked" },
+  { id: "acc_widehat",   name: "Wide-brim hat",  slot: "hat", bodies: BOTH, tier: "free",    file: "crude_hat" },
+  { id: "hat_newsboy",   name: "Newsboy cap",    slot: "hat", bodies: BOTH, tier: "free",    file: "jujube_newsboy_cap" },
+  { id: "hat_cloche",    name: "Cloche",         slot: "hat", bodies: BOTH, tier: "free",    file: "aethelraed_unraed_cloche_hat", tint: false },
+  { id: "hat_santa",     name: "Santa hat",      slot: "hat", bodies: BOTH, tier: "premium", file: "joepal_xmas_cap", tint: false },
   // Accessories
-  { id: "acc_fedora",    name: "Fedora",         slot: "accessory", bodies: BOTH, tier: "free",    file: "fedora01" },
-  { id: "acc_fedoratilt",name: "Tilted fedora",  slot: "accessory", bodies: BOTH, tier: "free",    file: "fedora_cocked" },
-  { id: "acc_widehat",   name: "Wide-brim hat",  slot: "accessory", bodies: BOTH, tier: "free",    file: "crude_hat" },
   { id: "acc_shades",    name: "Visor shades",   slot: "accessory", bodies: BOTH, tier: "free",    file: "crude_lab_glasses" },
   { id: "acc_gloves",    name: "Gloves",         slot: "accessory", bodies: BOTH, tier: "free",    file: "crude_gloves" },
   { id: "acc_mask",      name: "Masquerade mask", slot: "accessory", bodies: BOTH, tier: "premium", file: "crude_theater_mask" },
   { id: "acc_longgloves",name: "Opera gloves",   slot: "accessory", bodies: BOTH, tier: "premium", file: "crude_long_gloves" },
+  { id: "acc_3d",        name: "3D glasses",     slot: "accessory", bodies: BOTH, tier: "free",    file: "ews_3d_glasses", tint: false },
+  { id: "acc_leopard",   name: "Leopard sunnies", slot: "accessory", bodies: BOTH, tier: "free",   file: "toigo_round_glasses_leopard", tint: false },
+  { id: "acc_redframes", name: "Red frames",     slot: "accessory", bodies: BOTH, tier: "free",    file: "spamrakuen_sagerfrogs_glasses_01", tint: false },
+  { id: "acc_frames",    name: "Black frames",   slot: "accessory", bodies: BOTH, tier: "free",    file: "spamrakuen_tbm_glasses_frames_01", tint: false },
+  { id: "acc_leather",   name: "Leather gloves", slot: "accessory", bodies: BOTH, tier: "free",    file: "toigo_gloves_short", tint: false },
+  { id: "acc_hero",      name: "Hero mask",      slot: "accessory", bodies: BOTH, tier: "premium", file: "culturalibre_hero_mask_2", tint: false },
+  // Bags (CC-BY: credited in client/assets/parts/CREDITS.md)
+  { id: "bag_satchel",   name: "Satchel",        slot: "bag", bodies: BOTH, tier: "free",    file: "punkduck_handbag01", tint: false,
+    license: "CC-BY", author: "punkduck" },
+  { id: "bag_sling",     name: "Sling purse",    slot: "bag", bodies: BOTH, tier: "free",    file: "elvs_sling_purse1", tint: false,
+    license: "CC-BY", author: "Elvaerwyn" },
+  { id: "bag_shopping",  name: "Shopping bag",   slot: "bag", bodies: BOTH, tier: "free",    file: "punkduck_shopping_bag01", tint: false,
+    license: "CC-BY", author: "punkduck" },
+  { id: "bag_suitcase",  name: "Suitcase",       slot: "bag", bodies: BOTH, tier: "premium", file: "culturalibre_suitcase", tint: false,
+    license: "CC-BY", author: "culturalibre", originalAuthor: "Duion" },
 ];
 
 export const bodyById = (id) => BODIES.find((b) => b.id === id) ?? null;
@@ -193,7 +238,7 @@ export const partColorHex = (slot, i) => { const c = partSlotById(slot)?.colors 
 // body shape (SHAPE_KINDS order), then slot=part:color for each filled slot, in PART_SLOTS order, joined
 // with ";". Colors are palette indices. Default shapes and empty slots are left out.
 //   female;3;hair=hair_bob:4;eyebrows=brows_soft:1;top=top_tank:2;bottom=bottom_shorts:8;shoes=shoes_sneakers:0
-//   male;5;build=heavy;face=round;top=top_puffer:0;bottom=bottom_jeans:0;accessory=acc_fedora:3
+//   male;5;build=heavy;face=round;top=top_puffer:0;bottom=bottom_jeans:0;hat=acc_fedora:3;accessory=acc_3d:0
 // It's what the server stores on the account and syncs to other players.
 export const MAX_RECIPE_LENGTH = 300;
 const ID = /^[a-z0-9_-]{1,32}$/;
@@ -234,9 +279,15 @@ export function parseRecipe(input) {
     const want = shapes[k.id];
     out.shape[k.id] = (typeof want === "string" && k.options.find((o) => o.id === want)?.id) || k.options[0].id;
   }
-  for (const [slotId, id, color] of wanted) {
-    const slot = partSlotById(slotId);
+  // Parts in their own slot first; then parts named under a slot they used to live in move to their
+  // own slot (if it's still free), so an explicit hat=… beats an old accessory=<hat>.
+  for (const moved of [false, true]) for (const [slotId, id, color] of wanted) {
+    let slot = partSlotById(slotId);
     const part = typeof id === "string" && ID.test(id) ? partById(id) : null;
+    if (moved) {
+      if (!slot || !part || part.slot === slot.id || !partSlotById(part.slot)?.formerly?.includes(slot.id)) continue;
+      slot = partSlotById(part.slot);
+    }
     if (!slot || !part || part.slot !== slot.id || out.parts[slot.id] || !part.bodies.includes(body)) continue;
     out.parts[slot.id] = { id: part.id, color: index(color, slot.colors.length) };
   }
