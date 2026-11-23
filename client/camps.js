@@ -18,6 +18,9 @@ function ownerColor(name) {
   return ["#f2994a", "#2d9cdb", "#eb5757", "#27ae60", "#9b51e0", "#f2c94c", "#ff4fa3", "#4fe3ff"][h % 8];
 }
 
+// "Rook", or "Rook & crew" for a camp shared with a crew (on the sign and the name stake).
+const campTitle = (camp) => (camp.mates?.length ? `${camp.owner} & crew` : camp.owner);
+
 function textTexture(THREE, text, { w = 512, h = 128, color = "#fff", bg = "rgba(0,0,0,0)", font = "bold 72px system-ui, sans-serif" } = {}) {
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
@@ -135,7 +138,7 @@ function buildItem(THREE, id, camp, plot, opts = {}) {
     }
     case "neon": {
       // The owner's name in neon over the front of the camp.
-      const sign = add(new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.6, plot.w), 0.6), new THREE.MeshBasicMaterial({ map: textTexture(THREE, camp.owner, { color: "#ff6bd0" }), transparent: true, side: THREE.DoubleSide, toneMapped: false })), 0, 2.3, plot.d / 2 - 0.05);
+      const sign = add(new THREE.Mesh(new THREE.PlaneGeometry(Math.min(2.6, plot.w), 0.6), new THREE.MeshBasicMaterial({ map: textTexture(THREE, campTitle(camp), { color: "#ff6bd0" }), transparent: true, side: THREE.DoubleSide, toneMapped: false })), 0, 2.3, plot.d / 2 - 0.05);
       for (const x of [-0.9, 0.9]) add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.0, 5), std(THREE, "#333")), Math.max(-plot.w / 2, Math.min(plot.w / 2, x)), 1.0, plot.d / 2 - 0.05);
       g.userData.tick = (dt, t) => { sign.material.opacity = Math.sin(t * 13) > -0.97 ? 1 : 0.4; };   // the odd flicker
       break;
@@ -193,8 +196,10 @@ function buildCamp(THREE, camp, opts = {}) {
   const stake = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.6, 0.05), std(THREE, "#8a6a4f"));
   stake.position.set(-plot.w / 2 + 0.1, 0.3, plot.d / 2 - 0.1);
   root.add(stake);
-  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.25), new THREE.MeshBasicMaterial({ map: textTexture(THREE, camp.owner, { w: 256, h: 72, font: "bold 40px system-ui, sans-serif", bg: "#f4efe2", color: "#2a1b3d" }), side: THREE.DoubleSide }));
-  label.position.set(-plot.w / 2 + 0.1 + 0.45, 0.6, plot.d / 2 - 0.1);
+  const title = campTitle(camp);
+  const lw = Math.min(plot.w - 0.2, title.length > 10 ? 1.4 : 0.9);
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(lw, 0.25), new THREE.MeshBasicMaterial({ map: textTexture(THREE, title, { w: Math.round(256 * lw / 0.9), h: 72, font: "bold 40px system-ui, sans-serif", bg: "#f4efe2", color: "#2a1b3d" }), side: THREE.DoubleSide }));
+  label.position.set(-plot.w / 2 + 0.1 + lw / 2, 0.6, plot.d / 2 - 0.1);
   root.add(label);
 
   const slots = campSlots(camp.plot);

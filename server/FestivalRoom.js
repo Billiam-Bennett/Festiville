@@ -243,10 +243,21 @@ export class FestivalRoom extends Room {
     const a = this.account(client.sessionId);
     if (!a) return;
     const store = accountStore();
-    client.send("wallet", { credits: store.balance(a), unlocks: [...a.unlocks], campItems: store.campItems(a), camp: campStore().public(a.id) });
+    const crewOwner = campStore().mateOf(a.id);
+    client.send("wallet", {
+      credits: store.balance(a), unlocks: [...a.unlocks], campItems: store.campItems(a),
+      camp: campStore().public(a.id),                                   // the camp you own
+      crewCamp: crewOwner ? campStore().public(crewOwner) : null,       // a crew camp you're part of
+    });
   }
 
-  handleCamp(client, { action, plot, items, style }) {
+  // A signed-in player in this room, by account id (for telling campmates about changes).
+  clientOfAccount(accountId) {
+    for (const [sid, id] of this.accountOf) if (id === accountId) return this.clients.find((c) => c.sessionId === sid) ?? null;
+    return null;
+  }
+
+  handleCamp(client, { action, plot, items, style, item, on, camp: which, name }) {
     const a = this.account(client.sessionId);
     const p = this.state.players.get(client.sessionId);
     if (!a || !p) return;
@@ -284,12 +295,48 @@ export class FestivalRoom extends Room {
     } else if (action === "setup") {
       const out = camps.setItems(a.id, items, owned);
       if (out.error) return say(out.error, true);
-    } else if (action === "music") {
-      const out = camps.setMusic(a.id, typeof style === "string" ? style : "");
+    } else if (action === "item" || action === "music") {
+      // In your own camp, or (camp: "crew") the crew camp you're part of.
+      const target = which === "crew" ? camps.mateOf(a.id) : a.id;
+      if (!target || !camps.of(target)) return say(which === "crew" ? "You're not in a crew camp." : "Claim a camp spot first.", true);
+      const out = action === "item"
+        ? camps.setItem(target, a.id, typeof item === "string" ? item : "", on !== false, owned)
+        : camps.setMusic(target, typeof style === "string" ? style : "", a.id);
       if (out.error) return say(out.error, true);
+    } else if (action === "share") {
+      // Everyone in your crew (in this festival room) becomes a campmate.
+      if (!mine) return say("Claim a camp spot first, then share it with your crew.", true);
+      const crew = this.quests.crews.get(this.quests.players.get(client.sessionId)?.crewId);
+      const people = (crew?.members ?? []).filter((id) => id !== client.sessionId)
+        .map((id) => ({ id: this.accountOf.get(id), name: this.state.players.get(id)?.name })).filter((x) => x.id && x.name);
+      if (!people.length) return say("Start a crew first: tap a player to invite them, then share your camp.", true);
+      const out = camps.share(a.id, people);
+      if (out.error) return say(out.error, true);
+      if (out.added.length) say(`Shared your camp with ${out.added.join(", ")}. They can set up their things in it from the Camp tab.`);
+      if (out.skipped.length) say(`${out.skipped.join(". ")}.`, true);
+      for (const n of out.added) {
+        const c = this.clients.find((x) => this.state.players.get(x.sessionId)?.name === n);
+        if (!c) continue;
+        c.send("toast", { text: `${a.username} shared their camp with you! Set up your things in it from 🪙 Shop → Camp.` });
+        this.sendWallet(c);
+      }
+    } else if (action === "unshare") {
+      const out = camps.unshare(a.id, typeof name === "string" ? name : "");
+      if (out.error) return say(out.error, true);
+      say(`${out.name} isn't part of your camp any more. Their things went with them.`);
+      const c = this.clientOfAccount(out.id);
+      if (c) { c.send("toast", { text: `${a.username} took you off their crew camp.` }); this.sendWallet(c); }
+    } else if (action === "leave") {
+      const out = camps.leave(a.id);
+      if (out.error) return say(out.error, true);
+      say("You left the crew camp. Your things came with you.");
+      const c = this.clientOfAccount(out.ownerId);
+      if (c) { c.send("toast", { text: `${a.username} left your crew camp.` }); this.sendWallet(c); }
     } else if (action === "release") {
+      const mates = camps.of(a.id)?.mates ?? [];
       if (!camps.release(a.id)) return say("You don't have a camp.", true);
       say("You packed up and gave back your spot.");
+      for (const id of mates) this.clientOfAccount(id)?.send("toast", { text: `${a.username} gave back their camp spot, so your crew camp is gone. Your things are still yours.` });
     }
     this.sendWallet(client);
   }
