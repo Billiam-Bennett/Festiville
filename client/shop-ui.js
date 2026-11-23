@@ -1,7 +1,7 @@
 // Credits and the shop: the 🪙 balance button and the Shop panel (Camp · Wear · Looks · Get credits).
 // The browser only shows and asks; the server (server/shop.js, FestivalRoom.handleCamp) decides,
 // takes the credits and answers with a "wallet" message (balance, unlocks, camp items, your camp).
-import { PLOTS, plotById, plotRank, CAMP_ITEMS, campItemById, CREDIT_PACKS, CREDIT_TERMS, QUEST_REWARDS, shopCatalog } from "../shared/economy.js";
+import { PLOTS, plotById, plotRank, CAMP_ITEMS, campItemById, CREDIT_PACKS, CREDIT_TERMS, QUEST_REWARDS, HUNT, shopCatalog } from "../shared/economy.js";
 import { checkSpot, groundCapacity, cleanCampItems, MUSIC_STYLES, DEFAULT_MUSIC } from "../shared/camps.js";
 import { LAYOUT } from "../shared/venue.js";
 import { QUESTS } from "../shared/quests-data.js";
@@ -156,8 +156,9 @@ export function setupShop({ mp, toast, account, camps, me }) {
 
   // ---------- Get credits ----------
   function creditsTab() {
-    const out = [heading("Earn credits"), el("p", { className: "small", textContent: "Side quests pay credits: the full reward the first time, a smaller one for repeats." })];
+    const out = [heading("Earn credits"), el("p", { className: "small", textContent: "Side quests pay credits (the full reward the first time, a smaller one for repeats), and so does the daily scavenger hunt." })];
     for (const [id, r] of Object.entries(QUEST_REWARDS)) if (QUESTS[id]) out.push(row(QUESTS[id].name, `First time ${coins(r.first)} · repeats ${coins(r.repeat)}`));
+    out.push(row("Daily scavenger hunt", `${HUNT.tokens} glowing tokens a day: ${coins(HUNT.perToken)} each, ${coins(HUNT.bonus)} for all ${HUNT.tokens}. Tap 🔍 Hunt at the top for hints.`));
     out.push(heading("Buy credits"), el("p", { className: "small", textContent: "Coming soon. Buying credits isn't open yet." }));
     for (const p of CREDIT_PACKS) {
       const b = el("button", { type: "button", className: "btn-sm", textContent: `$${p.usd.toFixed(2)}`, disabled: true });

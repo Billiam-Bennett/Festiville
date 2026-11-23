@@ -11,7 +11,8 @@ import { layoutStore } from "./layout.js";
 import { moderationStore, ACTIONS, REASONS, untilText } from "./moderation.js";
 import { buy, rewardQuest } from "./shop.js";
 import { campStore, upgradeCost } from "./camps.js";
-import { plotById } from "../shared/economy.js";
+import { plotById, HUNT } from "../shared/economy.js";
+import { huntDay, huntSpots, foundToday, collectToken, secondsToNextHunt } from "./hunt.js";
 
 // Which room/connection each signed-in account is using, across all rooms in this server process.
 // Signing in somewhere new closes the older connection (close code 4100) instead of letting one
@@ -56,6 +57,9 @@ export class FestivalRoom extends Room {
     this.recentChat = new Map();  // sessionId -> that player's last few chat lines (evidence for reports)
     this.emotes = new Map();      // sessionId -> emote state (shared/emotes.js); emote + emoteSeq are copied into the schema
     this.sinceBanCheck = 0;
+    this.sinceHuntCheck = 0;
+    this.huntFound = new Map();   // sessionId -> Set of token numbers that player found today
+    this.refreshHunt();
     this.elapsed = 0;          // seconds since the room opened (NOT this.clock: Colyseus uses that name)
 
     // Crews and quests. Everything is re-checked on the server (distance, crew size, etc.).
@@ -142,7 +146,10 @@ export class FestivalRoom extends Room {
     this.onMessage("vendors", (client) => client.send("vendors", vendorStore().all()));
     this.stopVendorUpdates = vendorStore().onChange((listing) => this.broadcast("vendor", listing));
     // A new layout from the festival builder: tell everyone (they refresh to walk the new grounds).
-    this.stopLayoutUpdates = layoutStore().onChange(() => this.broadcast("layout", {}));
+    this.stopLayoutUpdates = layoutStore().onChange(() => { this.broadcast("layout", {}); this.refreshHunt(true); });
+
+    // The daily scavenger hunt (server/hunt.js): ask for today's tokens; walking over one picks it up (tick).
+    this.onMessage("hunt", (client) => this.sendHunt(client));
 
     const dt = 1 / TICK_RATE;
     serverStats.rooms++;
@@ -172,6 +179,8 @@ export class FestivalRoom extends Room {
       const input = this.inputs.get(id);
       if (updateEmote(st, { now: this.elapsed, moving: !!input && (input.x !== 0 || input.z !== 0) })) this.syncEmote(id);
     }
+    this.sinceHuntCheck += dt;
+    if (this.sinceHuntCheck >= 0.25) { this.sinceHuntCheck = 0; this.checkHunt(); }
     this.quests.tick(this.positions(), this.elapsed, dt);
     this.syncQuests();
   }
@@ -406,9 +415,49 @@ export class FestivalRoom extends Room {
   }
 
   // Bans and staff changes made from the command line reach players who are already in the game.
+  // ---------- Daily scavenger hunt ----------
+  // Today's tokens (the same in every room). On a new day or a new layout, everyone gets the new set.
+  refreshHunt(force = false) {
+    const day = huntDay();
+    if (!force && this.hunt?.day === day) return;
+    const newDay = this.hunt?.day !== day;
+    this.hunt = { day, spots: huntSpots(day) };
+    if (newDay) for (const set of this.huntFound.values()) set.clear();
+    for (const c of this.clients ?? []) this.sendHunt(c);
+  }
+
+  sendHunt(client) {
+    const found = this.huntFound.get(client.sessionId) ?? new Set();
+    client.send("hunt", {
+      day: this.hunt.day,
+      spots: this.hunt.spots.map((s) => ({ ...s, found: found.has(s.i) })),
+      perToken: HUNT.perToken, bonus: HUNT.bonus, resetsIn: secondsToNextHunt(),
+    });
+  }
+
+  // Anyone standing on a token they haven't found today picks it up.
+  checkHunt() {
+    const { day, spots } = this.hunt;
+    this.state.players.forEach((p, sessionId) => {
+      const found = this.huntFound.get(sessionId);
+      const accountId = this.accountOf.get(sessionId);
+      if (!found || !accountId) return;
+      for (const s of spots) {
+        if (found.has(s.i) || Math.abs(p.x - s.x) > HUNT.range || Math.abs(p.z - s.z) > HUNT.range) continue;
+        const out = collectToken(accountStore(), accountId, { day, spots, i: s.i, pos: p });
+        if (out.error) continue;
+        found.add(s.i);
+        const client = this.clients.find((c) => c.sessionId === sessionId);
+        client?.send("huntFound", { i: s.i, credits: out.credits, bonus: out.bonus, found: out.found.length, total: spots.length, complete: out.complete });
+        if (client) this.sendWallet(client);
+      }
+    });
+  }
+
   checkRestrictions() {
     accountStore().refresh();
     layoutStore().refresh();      // picks up `npm run layout -- restore` while running
+    this.refreshHunt();           // a new day brings a new hunt
     campStore().refresh();        // picks up `npm run account -- camp-release` while running
     if (moderationStore().open().length !== lastStaffCount) notifyStaffCount();   // e.g. `npm run account -- close-report`
     this.state.players.forEach((p, sessionId) => {
@@ -451,6 +500,8 @@ export class FestivalRoom extends Room {
     this.quests.players.get(client.sessionId).badges = new Set(account.badges);   // saved progress
     p.badges = [...account.badges].join(",");
     campStore().rename(account.id, account.username);
+    this.refreshHunt();
+    this.huntFound.set(client.sessionId, new Set(foundToday(account, this.hunt.day)));   // today's hunt progress
     console.log(`[festival ${this.roomId}] ${p.name} joined (${this.clients.length} online)`);
   }
 
@@ -470,6 +521,7 @@ export class FestivalRoom extends Room {
     this.quests.leave(client.sessionId);
     this.chat.leave(client.sessionId);
     this.recentChat.delete(client.sessionId);
+    this.huntFound.delete(client.sessionId);
     const accountId = this.accountOf.get(client.sessionId);
     this.accountOf.delete(client.sessionId);
     if (accountId && online.get(accountId) === client) online.delete(accountId);

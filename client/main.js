@@ -15,6 +15,7 @@ import { normalizeRecipe, partById, bodyById } from "../shared/parts.js";
 import { createLookBuilder, createPreview } from "./look-builder.js";
 import { setupCamps } from "./camps.js";
 import { setupShop } from "./shop-ui.js";
+import { setupHunt } from "./hunt-ui.js";
 import { UNLOCK_PRICES } from "../shared/economy.js";
 import { createCameraRig } from "./camera.js";
 import { applyLayout } from "../shared/venue.js";
@@ -267,6 +268,7 @@ let chat = null;
 let moderation = null;
 let camps = null;
 let shop = null;
+let hunt = null;
 let removedText = "";   // why staff removed you, if they did
 // Add ?debug to the URL to poke at the game from the browser console (window.__gs).
 if (params.has("debug")) window.__gs = { THREE, scene, camera, listener, get mp() { return mp; }, get camps() { return camps; } };
@@ -389,6 +391,7 @@ $("join-form").addEventListener("submit", async (e) => {
     chat = setupChat({ THREE, mp, quests });
     moderation = setupModeration({ mp, quests, chat, account });
     setupReports({ mp, quests, isStaff: moderation.isStaff });
+    hunt = setupHunt({ THREE, scene, mp, toast: quests.toast });
     shop = setupShop({ mp, toast: quests.toast, account, camps, me: () => mp.room.state.players.get(mp.room.sessionId) });
     emotes?.dispose();
     emotes = setupEmotes({ mp, button: $("dance") });
@@ -471,6 +474,7 @@ renderer.setAnimationLoop(() => {
     chat?.update(dt);
     camps?.update(dt, me.position);
     shop?.update(dt);
+    hunt?.update(dt);
     moderation?.update();
     rig.update(dt, me.position);   // camera follows you; scroll / pinch / +/- to zoom
     $("hud-online").textContent = `${mp.onlineCount()} online`;

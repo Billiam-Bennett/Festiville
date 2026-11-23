@@ -73,6 +73,12 @@
     #hud { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between;
       pointer-events: none; font-size: 14px; }
     #hud-badges { color: #ffd36b; }
+    #hud .hud-left { display: flex; gap: 6px; align-items: flex-start; }
+    #hud #hud-hunt { pointer-events: auto; cursor: pointer; color: #ffd36b; border: 1px solid rgba(255,211,107,.45); }
+    #hud #hud-hunt[hidden] { display: none; }
+    #hud #hud-hunt.done { color: #7ee081; border-color: rgba(126,224,129,.45); }
+    #hunt-list { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+    #hunt-list li.found { color: #7ee081; }
     #hud[hidden] { display: none; }
     #hud div { background: var(--panel); padding: 6px 12px; border-radius: 999px; }
     #hud-status.bad { color: #ff9a9a; }
@@ -332,7 +338,7 @@
   </div>
 
   <div id="hud" hidden>
-    <div id="hud-status">Live</div>
+    <span class="hud-left"><div id="hud-status">Live</div><div id="hud-hunt" role="button" tabindex="0" aria-label="Scavenger hunt: hints" hidden></div></span>
     <div id="hud-badges" hidden></div>
     <div id="hud-online">1 online</div>
   </div>
@@ -466,6 +472,13 @@
     </div>
   </section>
 
+  <section id="hunt" class="card sheet" hidden role="dialog" aria-labelledby="hunt-title">
+    <h2 id="hunt-title">🔍 Daily scavenger hunt</h2>
+    <p id="hunt-rules"></p>
+    <ol id="hunt-list"></ol>
+    <p class="small" id="hunt-next"></p>
+    <div class="row"><button id="hunt-close" class="btn-ghost" type="button">Close</button></div>
+  </section>
   <section id="offer" class="card sheet" hidden role="dialog" aria-labelledby="of-name">
     <div class="who" id="of-who"></div>
     <h2 id="of-name"></h2>

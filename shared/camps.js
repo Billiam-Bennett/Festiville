@@ -35,6 +35,12 @@ function boxOf(item) {
   const hd = (Math.abs(w * Math.sin(a)) + Math.abs(d * Math.cos(a))) / 2;
   return { x0: item.x - hw, x1: item.x + hw, z0: item.z - hd, z1: item.z + hd };
 }
+// Boxes around everything in the layout you can't stand inside (stalls, stages, tents, trees, …),
+// grown by `pad` meters. Used for camp spots here and for scavenger hunt tokens (server/hunt.js).
+export const blockingBoxes = (items, pad = 0) => items.filter((i) => BLOCKING.has(i.type) && TYPES[i.type]).map((i) => {
+  const b = boxOf(i);
+  return { x0: b.x0 - pad, x1: b.x1 + pad, z0: b.z0 - pad, z1: b.z1 + pad, type: i.type };
+});
 const overlaps = (a, b, gap = 0) => a.x0 < b.x1 + gap && b.x0 < a.x1 + gap && a.z0 < b.z1 + gap && b.z0 < a.z1 + gap;
 export const plotBox = (x, z, plot) => ({ x0: x - plot.w / 2, x1: x + plot.w / 2, z0: z - plot.d / 2, z1: z + plot.d / 2 });
 
