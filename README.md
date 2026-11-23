@@ -324,7 +324,7 @@ Both are on the join screen and in the in-game 👕 panel, with a live 3D previe
 
 ### Parts-based characters (the generator)
 
-The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the body shapes, the slots, every part (which bodies it fits, free or premium, its file), and the color palettes. There are 20 hairstyles, 3 eyebrow styles, 18 tops, 14 bottoms, 16 pairs of shoes, 6 hats and 10 accessories (glasses, masks, gloves), and each body comes in 4 builds (average, slim, heavy, athletic), 4 faces (classic, round, angular, heart) and 3 heights. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so one animation set per body fits every combination.
+The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the body shapes, the slots, every part (which bodies it fits, free or premium, its file), and the color palettes. There are 20 hairstyles, 3 eyebrow styles, 18 tops, 14 bottoms, 16 pairs of shoes, 6 hats, 10 accessories (glasses, masks, gloves) and 4 bags, and each body comes in 4 builds (average, slim, heavy, athletic), 4 faces (classic, round, angular, heart) and 3 heights. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so one animation set per body fits every combination.
 
 A player's look is stored as a short **recipe** string: body, skin tone, then `kind=id` for each body shape that isn't the default (build, face, height), then `slot=part:color` for each filled slot (colors are palette numbers):
 
@@ -337,7 +337,7 @@ The server cleans every recipe (`normalizeRecipe()`), swaps premium parts the ac
 
 #### The part files
 
-The bodies and parts are made from MakeHuman's free **CC0** assets by `scripts/make-parts.py` (Blender + the MPFB extension; credits in `client/assets/parts/CREDITS.md`):
+The bodies and parts are made from MakeHuman's free **CC0** assets (plus four **CC-BY** bags, credited) by `scripts/make-parts.py` (Blender + the MPFB extension; credits in `client/assets/parts/CREDITS.md`):
 
 ```
 client/assets/parts/manifest.json         every exported file, plus each clothing part's slot and hide bit
@@ -370,7 +370,7 @@ client/assets/parts/male/…                the same for the male body
    blender -b --python scripts/make-parts.py -- client/assets/parts
    ```
    (`--only top=<name>` exports just one part, for testing, and leaves `body.glb` alone. `--keep-missing` keeps the existing files and hide bits of parts whose pack you don't have installed, so you can add parts without every pack on hand.) The default body doesn't change, so the animations don't need re-fitting unless you change the body itself.
-3. Add a line to `PARTS` in `shared/parts.js`, e.g. `{ id: "top_mesh", name: "Mesh top", slot: "top", bodies: ["female", "male"], tier: "free", file: "<name>", tint: false }`. Ids are lowercase (`a-z 0-9 _ -`, up to 32 characters) and unique across parts, characters and accessories; `file` can be longer.
+3. Add a line to `PARTS` in `shared/parts.js`, e.g. `{ id: "top_mesh", name: "Mesh top", slot: "top", bodies: ["female", "male"], tier: "free", file: "<name>", tint: false }`. Ids are lowercase (`a-z 0-9 _ -`, up to 32 characters) and unique across parts, characters and accessories; `file` can be longer. Check the asset's license in its pack's `packs/*.json`: CC0 needs nothing more; a CC-BY asset also needs `license: "CC-BY", author: "…"` on its line and a credit (asset, author, source, license, what was changed) in `client/assets/parts/CREDITS.md`, which `npm test` checks.
 4. Restart the server (it prints the part list at startup) and refresh. Palettes are append-only: recipes store color numbers, so reordering a palette recolors everyone.
 
 #### Before the art arrives (and when a file is missing)

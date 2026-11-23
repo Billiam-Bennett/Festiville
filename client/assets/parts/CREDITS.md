@@ -1,7 +1,9 @@
 # Character parts: credits and license
 
-Every model and texture in this folder was made with [MakeHuman](https://static.makehumancommunity.org/) / MPFB
-from CC0 (public domain) assets. CC0 means they can be used, changed and shared freely, including commercially.
+Every model and texture in this folder was made with [MakeHuman](https://static.makehumancommunity.org/) / MPFB.
+Almost all of it comes from CC0 (public domain) assets, which can be used, changed and shared freely, including
+commercially. The bags are CC-BY (Creative Commons Attribution): they can be used the same way, including
+commercially, as long as their authors are credited, which the section "CC-BY assets (the bags)" below does.
 
 - **MakeHuman asset packs** ([static.makehumancommunity.org/assets/assetpacks.html](https://static.makehumancommunity.org/assets/assetpacks.html),
   the `*_cc0.zip` downloads): system assets, Hair 01, Shoes 01, Eyebrows 01, Shirts 01, Pants 01, Skirts 01,
@@ -20,6 +22,24 @@ from CC0 (public domain) assets. CC0 means they can be used, changed and shared 
     wide-brim hat, visor shades, masquerade mask, gloves and opera gloves.
 
 The body shapes (builds and faces) are MPFB's own CC0 targets.
+
+## CC-BY assets (the bags)
+
+From the MakeHuman asset pack Equipment 03 (`equipment03_cc-by.zip`,
+[static.makehumancommunity.org/assets/assetpacks/equipment03.html](https://static.makehumancommunity.org/assets/assetpacks/equipment03.html)),
+each labelled CC-BY in the pack's `packs/equipment03.json` (Creative Commons Attribution; MakeHuman's asset FAQ
+links [CC BY 2.5](https://creativecommons.org/licenses/by/2.5/)). Changes made for FestiVille: fitted to the
+game's two bodies with MPFB, weighted to its Mixamo skeleton, exported as glTF with WebP textures at most
+1024 px (512 px for the sling purse), and the sling purse reduced to about 6,000 vertices.
+
+| In the game | Asset | Author | Source |
+| --- | --- | --- | --- |
+| Satchel (`bag_satchel`) | `punkduck_handbag01` | punkduck | [makehumancommunity.org/node/959](http://www.makehumancommunity.org/node/959) |
+| Sling purse (`bag_sling`) | `elvs_sling_purse1` | Elvaerwyn | [makehumancommunity.org/node/1459](http://www.makehumancommunity.org/node/1459) |
+| Shopping bag (`bag_shopping`) | `punkduck_shopping_bag01` (its print is punkduck's own logo) | punkduck | [makehumancommunity.org/node/967](http://www.makehumancommunity.org/node/967) |
+| Suitcase (`bag_suitcase`) | `culturalibre_suitcase` | culturalibre, adapting an original model by Duion ([CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), [Blend Swap 66594](http://www.blendswap.com/blends/view/66594)) | [makehumancommunity.org/node/2550](http://www.makehumancommunity.org/node/2550) |
+
+Thank you, punkduck, Elvaerwyn, culturalibre and Duion!
 
 Thanks to the asset authors credited in those packs, including Toigo, Cortu, Elvs, Joepal, Namuhekam,
 Skalldyrssuppe, Frankyaye, Scailman, Culturalibre, Rehmanpolanski, Sonntag78, Mindfront, Joel Palmius,

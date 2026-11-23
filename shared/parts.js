@@ -1,5 +1,5 @@
 // Parts-based characters: players build their own look from a base body (with a build, face and
-// height) plus hair, eyebrows, clothes, a hat and an accessory. Shared so the server can check a player's recipe (server/entitlements.js) and the
+// height) plus hair, eyebrows, clothes, a hat, an accessory and a bag. Shared so the server can check a player's recipe (server/entitlements.js) and the
 // browser can build it (client/avatar.js) and offer it in the picker (client/look-builder.js).
 //
 // The art comes from MakeHuman (MPFB in Blender, CC0 assets). Every file is rigged to ONE shared
@@ -93,11 +93,14 @@ export const PART_SLOTS = [
   { id: "shoes",    name: "Shoes",    required: false, colors: CLOTH_COLORS, emptyChance: 0 },
   { id: "hat",      name: "Hat",      required: false, colors: CLOTH_COLORS, emptyChance: 0.7, formerly: ["accessory"] },
   { id: "accessory", name: "Accessory", required: false, colors: CLOTH_COLORS, emptyChance: 0.6 },
+  { id: "bag",      name: "Bag",      required: false, colors: CLOTH_COLORS, emptyChance: 0.75 },
 ];
 
 // The catalog. Files come from scripts/make-parts.py (MakeHuman CC0 assets): `file` is the exported
 // file name in client/assets/parts/<body>/ (a string, or { female, male } when each body uses its own).
 // The first free part in each required slot (per body) is that slot's default.
+// license: every part is CC0 unless it says otherwise. A "CC-BY" part also names its `author` (and the
+// original's, for an adaptation), and must be credited in client/assets/parts/CREDITS.md (a test checks).
 // tint: false = the part keeps its own printed colors/pattern (no swatches). Hair and eyebrows are
 // exported light grey, so they take the hair color swatches. Plain hats and accessories (white, grey
 // felt) take the cloth swatches; printed ones (3D glasses, leopard frames…) keep their own colors.
@@ -199,6 +202,15 @@ export const PARTS = [
   { id: "acc_frames",    name: "Black frames",   slot: "accessory", bodies: BOTH, tier: "free",    file: "spamrakuen_tbm_glasses_frames_01", tint: false },
   { id: "acc_leather",   name: "Leather gloves", slot: "accessory", bodies: BOTH, tier: "free",    file: "toigo_gloves_short", tint: false },
   { id: "acc_hero",      name: "Hero mask",      slot: "accessory", bodies: BOTH, tier: "premium", file: "culturalibre_hero_mask_2", tint: false },
+  // Bags (CC-BY: credited in client/assets/parts/CREDITS.md)
+  { id: "bag_satchel",   name: "Satchel",        slot: "bag", bodies: BOTH, tier: "free",    file: "punkduck_handbag01", tint: false,
+    license: "CC-BY", author: "punkduck" },
+  { id: "bag_sling",     name: "Sling purse",    slot: "bag", bodies: BOTH, tier: "free",    file: "elvs_sling_purse1", tint: false,
+    license: "CC-BY", author: "Elvaerwyn" },
+  { id: "bag_shopping",  name: "Shopping bag",   slot: "bag", bodies: BOTH, tier: "free",    file: "punkduck_shopping_bag01", tint: false,
+    license: "CC-BY", author: "punkduck" },
+  { id: "bag_suitcase",  name: "Suitcase",       slot: "bag", bodies: BOTH, tier: "premium", file: "culturalibre_suitcase", tint: false,
+    license: "CC-BY", author: "culturalibre", originalAuthor: "Duion" },
 ];
 
 export const bodyById = (id) => BODIES.find((b) => b.id === id) ?? null;

@@ -28,12 +28,13 @@
 # Textures are capped at TEX_MAX px and saved as WebP to keep downloads small. Hair and eyebrow textures
 # are turned light grey so the game's hair colors tint them cleanly (shared/parts.js). Materials are
 # written as alpha MASK (cut-out) rather than BLEND, so they sort and draw like solid surfaces in the
-# game; the body's skin is fully OPAQUE. Every asset used here is CC0 (check a pack's packs/*.json for
-# each asset's license before adding it: a few assets in "CC0" packs are CC-BY; ignore the "AGPL3" line
-# MakeClothes writes into every .mhclo, that's the tool's default header, not the asset's license):
+# game; the body's skin is fully OPAQUE. Every asset used here is CC0, except the bags, which are CC-BY
+# (credited; see PARTS["bag"]). Check a pack's packs/*.json for each asset's license before adding it: a few
+# assets in "CC0" packs are CC-BY. Ignore the "AGPL3" line MakeClothes writes into every .mhclo: that's the
+# tool's default header, not the asset's license. Sources:
 #   - MakeHuman's asset packs, https://static.makehumancommunity.org/assets/assetpacks.html (the *_cc0.zip
-#     of hair01, shoes01, shirts01, pants01, skirts01, suits01, hats01, glasses01, masks01, gloves01;
-#     unzip each into MPFB's user data folder)
+#     of hair01, shoes01, shirts01, pants01, skirts01, suits01, hats01, glasses01, masks01, gloves01, and
+#     equipment03_cc-by.zip for the bags; unzip each into MPFB's user data folder)
 #   - the MakeHuman 2 CC0 repository (github.com/Makehuman-2/MH2_Asset_Repository_CCO releases:
 #     mh_system_CC0.zip into MPFB's user data folder, crude_kit_CC0.zip into its clothes/ folder).
 import bpy, sys, os, json, glob, struct, tempfile
@@ -131,11 +132,16 @@ PARTS = {
     "accessory": ["crude_lab_glasses", "crude_theater_mask", "crude_gloves", "crude_long_gloves",
                   "ews_3d_glasses", "toigo_round_glasses_leopard", "spamrakuen_sagerfrogs_glasses_01",
                   "spamrakuen_tbm_glasses_frames_01", "culturalibre_hero_mask_2", "toigo_gloves_short"],
+    # Bags are CC-BY (equipment03 pack): each needs `license`/`credit` in shared/parts.js and a credit line in
+    # client/assets/parts/CREDITS.md (test/parts.test.js checks both). No hide mask: they sit over the clothes.
+    "bag": ["punkduck_handbag01", "elvs_sling_purse1", "punkduck_shopping_bag01", "culturalibre_suitcase"],
 }
 # Vertex budgets for very dense meshes (download size and crowd rendering): file -> max vertices. Blender's
 # Decimate (collapse) keeps the UVs and skin weights. Not for hair cards (collapsing merges the cards).
 DECIMATE = {"learning_anime_hair": 8000, "grinsegold_female_pirate_boots": 6000, "culturalibre_hero_mask_2": 3000,
-            "toigo_stiletto_booties": 6000}
+            "toigo_stiletto_booties": 6000, "elvs_sling_purse1": 5000}
+# Smaller texture caps for parts that are small on screen but have noisy textures that compress badly (px).
+TEX_MAX_FOR = {"elvs_sling_purse1": 512}
 # Texture fixes. Plain parts the game tints (shared/parts.js, no tint: false) are prepared for it:
 # "flat" = solid white (the Crude Kit paints white islands on black, and the black showed through as
 # blotches), "grey" = light grey keeping detail, like hair. "pad" = a printed texture painted as islands on
@@ -195,6 +201,18 @@ def shrink_images():
         if max(w, h) > TEX_MAX:
             s = TEX_MAX / max(w, h)
             img.scale(max(1, int(w * s)), max(1, int(h * s)))
+
+
+def shrink_part_images(obj, px):
+    """Cap the textures of obj's own materials at px (for small parts; see TEX_MAX_FOR)."""
+    for slot in obj.material_slots:
+        if not slot.material or not slot.material.use_nodes:
+            continue
+        for node in slot.material.node_tree.nodes:
+            img = getattr(node, "image", None)
+            if node.type == "TEX_IMAGE" and img and max(img.size) > px:
+                s = px / max(img.size)
+                img.scale(max(1, int(img.size[0] * s)), max(1, int(img.size[1] * s)))
 
 
 def strip_subdivision(obj):
@@ -644,6 +662,8 @@ for body, cfg in BODIES.items():
                 split_outfit(part, piece, split_z)
             if file in DECIMATE:
                 decimate(part, DECIMATE[file])
+            if file in TEX_MAX_FOR:
+                shrink_part_images(part, TEX_MAX_FOR[file])
             hairy = slot in ("hair", "eyebrows")
             if TEXTURE_PREP.get(file) == "pad":
                 pad_textures(part)

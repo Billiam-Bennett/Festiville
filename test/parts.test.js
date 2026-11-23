@@ -47,6 +47,26 @@ test("catalog: the hat slot is optional, comes before accessories, and every bod
   for (const s of PART_SLOTS) for (const f of s.formerly ?? []) assert.ok(PART_SLOTS.some((x) => x.id === f), `${s.id}.formerly ${f}`);
 });
 
+test("catalog: the bag slot is optional, comes last, and every body has bags", () => {
+  const bag = PART_SLOTS.find((s) => s.id === "bag");
+  assert.ok(bag && !bag.required);
+  assert.equal(PART_SLOTS.at(-1).id, "bag");
+  for (const b of BODIES) assert.ok(partsFor(b.id, "bag").length >= 3, b.id);
+});
+
+test("licenses: parts are CC0 unless marked; every CC-BY part names its author and is credited in CREDITS.md", () => {
+  const credits = readFileSync(new URL("../client/assets/parts/CREDITS.md", import.meta.url), "utf8");
+  for (const p of PARTS) {
+    assert.ok(p.license === undefined || p.license === "CC0" || p.license === "CC-BY", `${p.id}: license ${p.license}`);
+    if (p.license !== "CC-BY") continue;
+    assert.ok(typeof p.author === "string" && p.author, `${p.id}: CC-BY needs an author`);
+    for (const f of new Set(Object.values(typeof p.file === "string" ? { f: p.file } : p.file))) {
+      assert.ok(credits.includes(f), `${p.id}: ${f} isn't credited in client/assets/parts/CREDITS.md`);
+    }
+    for (const who of [p.author, p.originalAuthor].filter(Boolean)) assert.ok(credits.includes(who), `${p.id}: CREDITS.md doesn't name ${who}`);
+  }
+});
+
 test("catalog: the accessory slot is optional and every body has accessories", () => {
   const slot = PART_SLOTS.find((s) => s.id === "accessory");
   assert.ok(slot && !slot.required);

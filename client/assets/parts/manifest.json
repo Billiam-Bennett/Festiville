@@ -450,6 +450,22 @@
           "slot": "accessory",
           "file": "toigo_gloves_short.glb",
           "hideBit": 9
+        },
+        "punkduck_handbag01": {
+          "slot": "bag",
+          "file": "punkduck_handbag01.glb"
+        },
+        "elvs_sling_purse1": {
+          "slot": "bag",
+          "file": "elvs_sling_purse1.glb"
+        },
+        "punkduck_shopping_bag01": {
+          "slot": "bag",
+          "file": "punkduck_shopping_bag01.glb"
+        },
+        "culturalibre_suitcase": {
+          "slot": "bag",
+          "file": "culturalibre_suitcase.glb"
         }
       }
     },
@@ -901,6 +917,22 @@
           "slot": "accessory",
           "file": "toigo_gloves_short.glb",
           "hideBit": 9
+        },
+        "punkduck_handbag01": {
+          "slot": "bag",
+          "file": "punkduck_handbag01.glb"
+        },
+        "elvs_sling_purse1": {
+          "slot": "bag",
+          "file": "elvs_sling_purse1.glb"
+        },
+        "punkduck_shopping_bag01": {
+          "slot": "bag",
+          "file": "punkduck_shopping_bag01.glb"
+        },
+        "culturalibre_suitcase": {
+          "slot": "bag",
+          "file": "culturalibre_suitcase.glb"
         }
       }
     }
