@@ -270,6 +270,8 @@ FestiVille has its own currency, **credits** (🪙). Every new player starts wit
 | Soundcheck | 250 | 70 |
 | Vendor Rush | 200 | 60 |
 
+**Daily scavenger hunt:** every day (midnight UTC) 5 gold tokens appear around the grounds, in the same places for everyone, so friends can hunt together. They glow with a light beam you can spot from across the field. Tap **🔍 Hunt** at the top for a hint list ("A little east of Dex", "Somewhere around the Campground") and the time until the next hunt. Walk over a token to pick it up: **10 credits** each, and **50 more** for finding all 5. That's 100 a day at most. The server checks you're really standing there. The rules are in `server/hunt.js`, the numbers in `HUNT` in `shared/economy.js`.
+
 **Spending credits:**
 
 - **⛺ Camp.** Claim your own spot in the Campground: walk to where you want it, pick a size and claim it. A green outline shows your spot fits, and a red one comes with the reason it doesn't. Spots are **10×10** (200), **10×20** (450) and **20×20** (900); upgrading pays the difference. Every camp comes with a dome tent. Buy more for it, then **Set up** or **Pack away** each item:
@@ -277,6 +279,12 @@ FestiVille has its own currency, **credits** (🪙). Every new player starts wit
   - **featured** items: a **PA system**, a **laser rig**, a **neon sign** with your name, and a **disco ball**
 
   Ground items need space in your spot, so bigger spots hold more. Lights, flags and signs go around the edge. Everyone sees your camp, even while you're offline. **Move camp here** moves it for free; **Give back spot** frees it with no refund, and you keep your items.
+
+  **The PA plays music.** Everyone near a camp with a PA hears it: full volume within a few steps, fading out about 30 m away. The owner picks the style in the Camp tab: **House**, **Hip-hop**, **Reggae** or **Chill**. The game composes and synthesizes it in the browser (`client/camp-music.js`), so there are no music files or licenses. Each camp gets its own key and chords from its owner's name, and the speakers thump on the real beat. Tap **🔊** by the map to mute camp music; the game remembers it.
+
+  **Crew camps.** In the Camp tab, **Share with my crew** makes everyone in your crew a campmate (up to a full crew of 4; you can be a campmate in one crew camp at a time). Campmates set up things *they* own in your camp. Each item shows who brought it, everyone shares the ground space, and you can pack away anything to make room. Campmates can leave, and you can remove them; their things go with them. Nobody pays for anyone else's things, so credits never move between players. A shared camp shows "Rook & crew" on its sign and on the map.
+
+  **On the map:** camps show on the minimap and the full map. Yours is pink, your crew's are cyan, and ♪ marks a camp whose PA is set up. **⛺ My camp** on the full map sets a waypoint back to your camp.
 - **🕶️ Wear.** Premium things to wear around the festival: festival totem, shutter shades, heart glasses, top hat, halo, fairy wings. Once you own one, put it on from 👕.
 - **🧍 Looks.** Premium characters and character parts.
 - **🪙 Credits.** How to earn credits, and the credit packs. Buying packs with real money is **not open yet**. The packs and the server hook (`grantPack` in `server/shop.js`) are ready for a payment provider. The plan is **PayPal Business**: a PayPal order for the pack, then PayPal's payment-captured webhook calls `grantPack` with the capture id, so a repeated webhook can't credit twice. Until that's connected, give credits from the command line:
@@ -288,11 +296,12 @@ npm run account -- credits <username> -200 refund
 npm run account -- camp-release <username>            # take back a camp spot (no refund)
 ```
 
-**How it's kept honest:** balances only change on the server, and the browser only asks. Every credit earned or spent is a line in `data/credits-ledger.jsonl`: who, how much, the new balance, and why (`quest:soundcheck`, `buy:totem`, `camp:plot_10x10`, `console: …`). Camps are saved in `data/camps.json`.
+**How it's kept honest:** balances only change on the server, and the browser only asks. Every credit earned or spent is a line in `data/credits-ledger.jsonl`: who, how much, the new balance, and why (`quest:soundcheck`, `hunt:2026-11-23:4:complete`, `buy:totem`, `camp:plot_10x10`, `console: …`). Camps, campmates and PA music are saved in `data/camps.json`.
 
 **Changing prices or adding things:** everything is in `shared/economy.js`:
 
 - starting credits, quest rewards and the daily cap
+- the daily scavenger hunt (`HUNT`)
 - credit packs
 - camp spot sizes and prices
 - camp items
@@ -476,7 +485,7 @@ Plus a domain name (~$12/year) if you want `play.yourfestival.com` instead of an
 ./deploy/account.sh make-mod <you>                       # any `npm run account` command
 ./deploy/vendor-link.sh hippiedips --base https://play.yourfestival.com
 # the festival builder is at https://play.yourfestival.com/client/builder.html (sign in as an organizer)
-./deploy/backup.sh                                       # saves accounts/vendors/reports to a .tar.gz
+./deploy/backup.sh                                       # saves all game data (accounts, credits, camps, vendors, reports) to a .tar.gz
 docker compose -f deploy/docker-compose.yml logs -f festiville    # watch the server log
 ```
 

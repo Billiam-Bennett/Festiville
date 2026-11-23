@@ -12,6 +12,7 @@ import { seededRandom } from "../shared/parts.js";
 
 const MIN_APART = 25;    // meters between tokens, so a hunt takes you around the grounds
 const EDGE = 8;          // meters kept clear of the fence
+const SPAWN_CLEAR = 16;  // meters around the middle kept clear: players appear within 10 m of it when they join
 
 export const huntDay = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 // Seconds until the next hunt (midnight UTC).
@@ -27,6 +28,7 @@ export function huntSpots(day, items = LAYOUT.items, vendors = VENDORS) {
   for (let tries = 0; spots.length < HUNT.tokens && tries < 4000; tries++) {
     const x = Math.round((rnd() * 2 - 1) * lim * 10) / 10, z = Math.round((rnd() * 2 - 1) * lim * 10) / 10;
     if (blocks.some((b) => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1)) continue;
+    if (Math.hypot(x, z) < SPAWN_CLEAR) continue;   // no free tokens just for joining
     if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < MIN_APART)) continue;
     spots.push({ i: spots.length, x, z, hint: describePlace(x, z, items, vendors) });
   }

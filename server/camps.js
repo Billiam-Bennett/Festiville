@@ -137,7 +137,7 @@ export class CampStore {
     } else {
       if (!c.items.includes(itemId)) return { camp: this.public(campOwnerId) };
       const holder = this.byOf(campOwnerId, itemId);
-      if (holder !== byId && byId !== campOwnerId) return { error: `Only ${who(holder)} or ${c.owner} can pack that away.` };
+      if (holder !== byId && byId !== campOwnerId) return { error: holder === campOwnerId ? `Only ${c.owner} can pack that away.` : `Only ${who(holder)} or ${c.owner} can pack that away.` };
       c.items = c.items.filter((i) => i !== itemId);
     }
     this.tidy(campOwnerId);

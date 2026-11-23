@@ -66,7 +66,7 @@ test("you pack away your own things; the owner can pack away anything", () => {
     camps.share("rook", [{ id: "ash", name: "Ash" }, { id: "zoe", name: "Zoe" }]);
     camps.setItem("rook", "ash", "pa", true, ["pa"]);
     assert.match(camps.setItem("rook", "zoe", "pa", false, ALL).error, /Only Ash or Rook/);
-    assert.match(camps.setItem("rook", "ash", "chairs", false, ALL).error, /Only Rook/);
+    assert.equal(camps.setItem("rook", "ash", "chairs", false, ALL).error, "Only Rook can pack that away.");
     assert.ok(camps.setItem("rook", "ash", "pa", false, ["pa"]).camp);
     camps.setItem("rook", "ash", "pa", true, ["pa"]);
     assert.ok(!camps.setItem("rook", "rook", "pa", false, []).camp.items.includes("pa"));   // owner tidies up

@@ -35,6 +35,7 @@ test("tokens are inside the fence, clear of stalls/tents/trees, spread out, with
       assert.ok(Math.abs(s.x) < FENCE - 7 && Math.abs(s.z) < FENCE - 7, `${day} token ${s.i} inside the fence`);
       assert.ok(!blocks.some((b) => s.x > b.x0 && s.x < b.x1 && s.z > b.z0 && s.z < b.z1), `${day} token ${s.i} is inside a ${blocks.find((b) => s.x > b.x0 && s.x < b.x1 && s.z > b.z0 && s.z < b.z1)?.type}`);
       assert.ok(typeof s.hint === "string" && s.hint.length > 5, `${day} hint`);
+      assert.ok(Math.hypot(s.x, s.z) >= 16, `${day} token ${s.i} is where players spawn`);
       for (const t of spots) if (t !== s) assert.ok(Math.hypot(s.x - t.x, s.z - t.z) >= 25, `${day} tokens ${s.i} and ${t.i} too close`);
     }
   }

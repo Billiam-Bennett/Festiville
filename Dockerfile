@@ -10,7 +10,8 @@ COPY server ./server
 COPY shared ./shared
 COPY client ./client
 COPY scripts ./scripts
-# Accounts, vendor listings and reports live here; keep it on a volume so they survive updates.
+# All saved game data (accounts, credits, camps, vendors, layout, reports) lives here; keep it on a
+# volume so it survives updates.
 RUN mkdir -p /app/data && chown node:node /app/data
 VOLUME /app/data
 EXPOSE 2567
