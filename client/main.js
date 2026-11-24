@@ -458,6 +458,7 @@ renderer.setAnimationLoop(() => {
     camera.lookAt(Math.cos(t) * shift, wide ? 1.05 : 0.15, -Math.sin(t) * shift);
     preview?.userData.animate?.(dt, 0, "dance");
   }
+  cast.update(camera, scene);   // crowd level of detail / culling (client/avatar.js)
   renderer.render(scene, camera);
 });
 

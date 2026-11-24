@@ -66,5 +66,8 @@ export function createCast(THREE, { placeholder }) {
   // Are the part files for this body installed? (The look builder says so when they aren't.)
   const partsReady = (body) => parts.hasBody(body);
 
-  return { make, load, partsReady, characters: CHARACTERS };
+  // Once per frame before rendering: distance detail, culling and animation pacing for built characters.
+  const update = (camera, scene) => parts.update(camera, scene);
+
+  return { make, load, partsReady, update, characters: CHARACTERS };
 }

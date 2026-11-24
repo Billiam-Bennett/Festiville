@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FestiVille crowd bench</title>
+  <!-- Crowd benchmark for parts-based characters. See client/bench.js for the URL options,
+       and `npm run bench` (scripts/bench-crowd.mjs) to run it headless and print a table. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.171.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #2a1b3d; color: #fff; font: 13px/1.4 ui-monospace, monospace; }
+    canvas { display: block; }
+    #hud { position: fixed; top: 8px; left: 8px; padding: 8px 10px; background: rgba(20, 12, 32, 0.8); border-radius: 8px; white-space: pre; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="hud">loading…</div>
+  <script type="module" src="./bench.js"></script>
+</body>
+</html>
