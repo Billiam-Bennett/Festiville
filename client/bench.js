@@ -65,10 +65,12 @@ function gpuMemory() {
     const w = img?.width ?? 0, h = img?.height ?? 0;
     texBytes += w * h * 4 * (t.generateMipmaps ? 4 / 3 : 1);
   }
+  const arrays = new Set();   // each buffer once: shaped / trimmed copies share most of their attributes
   for (const g of geometries) {
-    for (const a of Object.values(g.attributes)) geoBytes += a.array?.byteLength ?? 0;
-    geoBytes += g.index?.array.byteLength ?? 0;
+    for (const a of Object.values(g.attributes)) if (a.array) arrays.add(a.array);
+    if (g.index) arrays.add(g.index.array);
   }
+  for (const a of arrays) geoBytes += a.byteLength;
   return { textures: textures.size, texMB: +(texBytes / 2 ** 20).toFixed(1), geometries: geometries.size, geoMB: +(geoBytes / 2 ** 20).toFixed(1) };
 }
 
