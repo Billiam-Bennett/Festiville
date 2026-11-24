@@ -9,7 +9,7 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 | File | What it does |
 |---|---|
 | `shared/sim.js` | Movement rules (speed, map bounds, input cleanup). Used by BOTH server and browser. |
-| `server/schema.js` | The state every player sees: name, position, facing, dance emote. |
+| `server/schema.js` | The state every player sees: name, position, facing, emote. |
 | `server/FestivalRoom.js` | One festival instance: 100 players max, 20 ticks/sec, server owns all positions. |
 | `server/index.js` | Starts the game server on port 2567: game traffic, the vendor API, and the game page, all on one port. |
 | `server/vendors.js` | Vendor listings (menus, upcoming stops) and their private edit keys, saved in `data/`. |
@@ -22,7 +22,7 @@ This is the start of the real game: a 3D festival you can walk around in the bro
 | `server/quests.js` | All crew and quest rules (invites, crew size, quest steps, timers, badges). No networking, so it's fully tested. |
 | `shared/quests-data.js` | Quest content: who gives each quest, what they say, where things are. **Edit this to tweak or add quests.** |
 | `client/quests-ui.js` | Quest givers, Talk button, quest dialog, tracker, glowing objectives, crew rings, invites, badges. |
-| `client/index.html` | The game page: join screen, HUD, Dance button, phone joystick. |
+| `client/index.html` | The game page: join screen, HUD, Emote button, phone joystick. |
 | `client/main.js` | 3D scene setup and the game loop. |
 | `shared/layout.js` | **What's on the grounds**, as plain data: every stage, stall, area, tent, light, character and quest spot. The festival builder edits this; the server saves it in `data/layout.json`. |
 | `shared/venue.js` | Turns a layout into what the game reads (vendors, zones, quest positions), plus every vendor's starting menu. |
@@ -106,7 +106,7 @@ npm run client    # game page at http://localhost:5173
 
 Open http://localhost:5173 in **two browser windows**, create a different account in each (any username and a password of 8+ characters), and walk around. Each window should show the other player moving. If you run `npm run bots` at the same time, you'll see the bots walking circles too.
 
-**Controls:** WASD or arrows to walk, hold Shift to run, **E** or the **Dance** button to dance (everyone sees it; walking away ends it). On phones, use the joystick; push it to the edge to run.
+**Controls:** WASD or arrows to walk, hold Shift to run, **Space** to jump, **E** to dance, **1-9** or the **Emote** button for the rest: dance, bounce, fist pump, clap, wave, cheer, point, thumbs up and sit (everyone sees them; walking away ends a dance or stands you up; you can jump while running). On phones, use the joystick; push it to the edge to run. The emote list is `shared/emotes.js`.
 
 **Getting around:** scroll the mouse wheel, press **+ / -**, or pinch to zoom the camera (all the way out gives a bird's-eye view). The minimap in the top-right corner shows you (pink arrow), crewmates (blue), other players (white), quest givers (yellow) and quest objectives. Tap it, press **M**, or tap **Map** for the full festival map: drag to pan, scroll or pinch to zoom, and pick a vendor from the list or the map.
 
@@ -258,6 +258,61 @@ The page loads Three.js and the Colyseus client from the jsDelivr CDN, so the br
 
 The game server also serves the page itself at http://localhost:2567, so `npm run client` is optional. Once hosted, just open your domain. To point a local page at a hosted server instead: `http://localhost:5173/?server=wss://your-server.com`.
 
+## Credits and the shop
+
+FestiVille has its own currency, **credits** (🪙). Every new player starts with **500**. Tap the 🪙 button in the game to open the **Shop**.
+
+**Earning credits:** side quests pay credits as well as badges. You get the full reward the first time and a smaller one for repeats. Repeats stop paying after 300 credits a day, so quests can't be farmed.
+
+| Quest | First time | Repeats |
+|---|---|---|
+| Lost & Found | 150 | 40 |
+| Soundcheck | 250 | 70 |
+| Vendor Rush | 200 | 60 |
+
+**Spending credits:**
+
+- **⛺ Camp.** Claim your own spot in the Campground: walk to where you want it, pick a size and claim it. A green outline shows your spot fits, and a red one comes with the reason it doesn't. Spots are **10×10** (200), **10×20** (450) and **20×20** (900); upgrading pays the difference. Every camp comes with a dome tent. Buy more for it, then **Set up** or **Pack away** each item:
+  - everyday items: chairs, cooler, fire pit, shade canopy, hammock, bell tent, string lights, flag
+  - **featured** items: a **PA system**, a **laser rig**, a **neon sign** with your name, and a **disco ball**
+
+  Ground items need space in your spot, so bigger spots hold more. Lights, flags and signs go around the edge. Everyone sees your camp, even while you're offline. **Move camp here** moves it for free; **Give back spot** frees it with no refund, and you keep your items.
+- **🕶️ Wear.** Premium things to wear around the festival: festival totem, shutter shades, heart glasses, top hat, halo, fairy wings. Once you own one, put it on from 👕.
+- **🧍 Looks.** Premium characters and character parts.
+- **🪙 Credits.** How to earn credits, and the credit packs. Buying packs with real money is **not open yet**. The packs and the server hook (`grantPack` in `server/shop.js`) are ready for a payment provider. The plan is **PayPal Business**: a PayPal order for the pack, then PayPal's payment-captured webhook calls `grantPack` with the capture id, so a repeated webhook can't credit twice. Until that's connected, give credits from the command line:
+
+```bash
+npm run account -- credits <username>                 # balance and recent history
+npm run account -- credits <username> +500 bought a pack
+npm run account -- credits <username> -200 refund
+npm run account -- camp-release <username>            # take back a camp spot (no refund)
+```
+
+**How it's kept honest:** balances only change on the server, and the browser only asks. Every credit earned or spent is a line in `data/credits-ledger.jsonl`: who, how much, the new balance, and why (`quest:soundcheck`, `buy:totem`, `camp:plot_10x10`, `console: …`). Camps are saved in `data/camps.json`.
+
+**Changing prices or adding things:** everything is in `shared/economy.js`:
+
+- starting credits, quest rewards and the daily cap
+- credit packs
+- camp spot sizes and prices
+- camp items
+- `UNLOCK_PRICES` for premium wearables and looks
+
+A new camp item also needs its 3D shape in `buildItem()` in `client/camps.js`. A new wearable needs an entry in `shared/accessories.js` and a shape in `client/accessories.js`.
+
+**The rules for credits** (also shown to players in the 🪙 Credits tab):
+
+- **100 credits ≈ $1.** Bigger packs add a bonus: $4.99 → 500, $9.99 → 1,200 (+20%), $19.99 → 2,600 (+30%).
+- Credits have **no cash value** and can't be exchanged for money. Purchases of credits and of things bought with credits are **not refundable**.
+- Credits **can't be transferred** or gifted between players (this keeps out scams and resale of stolen accounts; gifting may come later).
+- Credits **don't expire**.
+- **Price tiers:**
+  - small things, 40–150 credits, are reachable in one play session
+  - mid-range things, 200–500, take a few days of play or a few dollars
+  - showpieces, 600–1,000, are mostly bought, or take about a week of play
+
+**Later: ad space for businesses.** Sponsored signs, banners and featured vendor spots will be sold to businesses **in dollars** (by invoice or PayPal), not in credits. Businesses expect receipts, and this keeps the player economy separate.
+
 ## Adding characters
 
 Players have two ways to look:
@@ -269,12 +324,13 @@ Both are on the join screen and in the in-game 👕 panel, with a live 3D previe
 
 ### Parts-based characters (the generator)
 
-The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the slots, every part (which bodies it fits, free or premium, its file), and the color palettes. There are 12 hairstyles, 3 eyebrow styles, 8 tops, 7 bottoms and 10 pairs of shoes. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so one animation set per body fits every combination.
+The catalog is `shared/parts.js`: the two bodies, the skin tone palette, the body shapes, the slots, every part (which bodies it fits, free or premium, its file), and the color palettes. There are 12 hairstyles, 3 eyebrow styles, 15 tops, 11 bottoms, 10 pairs of shoes and 7 accessories (hats, shades, a mask, gloves), and each body comes in 4 builds (average, slim, heavy, athletic), 4 faces (classic, round, angular, heart) and 3 heights. Every part is rigged to **one shared skeleton** with Mixamo bone names (`mixamorigHips`, `mixamorigHead`, …), so one animation set per body fits every combination.
 
-A player's look is stored as a short **recipe** string: body, skin tone, then `slot=part:color` for each filled slot (colors are palette numbers):
+A player's look is stored as a short **recipe** string: body, skin tone, then `kind=id` for each body shape that isn't the default (build, face, height), then `slot=part:color` for each filled slot (colors are palette numbers):
 
 ```
 female;3;hair=hair_bob:4;eyebrows=brows_soft:1;top=top_tank:2;bottom=bottom_shorts:8;shoes=shoes_sneakers:0
+male;5;build=heavy;face=round;top=top_puffer:0;bottom=bottom_jeans:0;shoes=shoes_boots:0;accessory=acc_fedora:3
 ```
 
 The server cleans every recipe (`normalizeRecipe()`), swaps premium parts the account hasn't unlocked for the free default, saves it as the player's default, and syncs it to everyone. A player has either a recipe or a classic look; the classic look is kept too, as a fallback (see below). Quest givers and NPCs can wear a recipe: set `recipe` next to `look` in `shared/quests-data.js` (`randomRecipe(seededRandom("their-id"))` gives a random one that's the same on every screen).
@@ -285,9 +341,9 @@ The bodies and parts are made from MakeHuman's free **CC0** assets by `scripts/m
 
 ```
 client/assets/parts/manifest.json         every exported file, plus each clothing part's slot and hide bit
-client/assets/parts/female/body.glb       base body (skin, eyes, eyelashes) + mixamorig* skeleton + hide masks
+client/assets/parts/female/body.glb       base body (skin, eyes, eyelashes) + mixamorig* skeleton + hide masks + shape morphs
 client/assets/parts/female/<file>.glb     one per part (the part's `file` in shared/parts.js)
-client/assets/parts/female/anims.json     the body's animations: Idle, Walk, Run, Dance
+client/assets/parts/female/anims.json     the body's animations: Idle, Walk, Run, Dance and the emotes
 client/assets/parts/female/skins/*.webp   extra skin textures
 client/assets/parts/male/…                the same for the male body
 ```
@@ -295,21 +351,23 @@ client/assets/parts/male/…                the same for the male body
 - **Bones:** every file uses the same `mixamorig*` bone names and rest pose as that body's `body.glb`. The game takes each part's skinned meshes and rebinds them to the player's body bones by name.
 - **Scale:** meters. The two bodies keep their real heights (1.59 m and 1.73 m).
 - **Colors:** hair and eyebrows are exported light grey and take the hair color swatches. Clothes keep their own printed colors and patterns (`tint: false` in `shared/parts.js`, so the builder shows no swatches for them). The skin tone tints the body.
-- **Skin under clothes:** `body.glb` stores a mask per clothing slot (top, bottom, shoes) saying which skin each part covers, so the game hides that skin while it's worn and nothing pokes through.
-- **Animations:** each body gets the classic characters' clips, re-fitted to its skeleton:
+- **Skin under clothes:** `body.glb` stores a mask per clothing slot (top, bottom, shoes, accessory) saying which skin each part covers, so the game hides that skin while it's worn and nothing pokes through.
+- **Body shapes:** builds and faces are morph targets in `body.glb` (`build_heavy`, `face_round`, …; quantized and sparse, about 0.1–0.25 MB each). The game bakes the chosen ones into the body once and **refits every part to the shaped body** when it loads (each part vertex follows the nearest body surface), so parts are exported once per body, not once per shape. Height just scales the avatar. To add a shape: add it to `SHAPES` in `scripts/make-parts.py` (MPFB macros and/or targets), re-run it, then add it to `BUILDS` / `FACES` in `shared/parts.js`.
+- **Outfit halves:** some tops and bottoms are halves of MakeHuman's one-piece system outfits, split at the hips by `make-parts.py` (entries like `("jeans", "male_casualsuit04", "lower")`).
+- **Animations:** each body gets the classic characters' Idle/Walk/Run/Dance plus the emotes (CC0 clips from Quaternius' Universal Animation Library and KayKit Character Animations, and a few made in the script), all re-fitted to its skeleton by one command:
   ```bash
-  npm run retarget -- client/assets/parts/female/body.glb Idle=client/assets/characters/remy.anims.json#Idle Walk=client/assets/characters/remy.anims.json#Walk Run=client/assets/characters/remy.anims.json#Run Dance=client/assets/characters/remy.anims.json#Dance --out client/assets/parts/female/anims.json
+  npm run parts-anims
   ```
-  (and the same with `male`). After re-running `make-parts.py`, run these again.
+  It downloads the CC0 packs once into `.cache/` (not committed) and rewrites both `anims.json` files; the list of clips is at the top of `scripts/parts-anims.mjs`. After re-running `make-parts.py`, run it again. To add an emote: add its clip there, then a line to `shared/emotes.js`.
 
 #### Adding a part
 
-1. Install [Blender](https://www.blender.org/download/), then the **MPFB** extension, and load MakeHuman CC0 asset packs into MPFB (see "Making a realistic character with MakeHuman" below).
+1. Install [Blender](https://www.blender.org/download/), then the **MPFB** extension, and load MakeHuman CC0 asset packs into MPFB (see "Making a realistic character with MakeHuman" below). The MakeHuman 2 CC0 repository on GitHub ([Makehuman-2/MH2_Asset_Repository_CCO](https://github.com/Makehuman-2/MH2_Asset_Repository_CCO), Releases) has the system assets and the Crude Kit as zips; without a Blender install, `pip install bpy` (Python 3.13) plus MPFB's source from GitHub also works headless.
 2. Add the asset's folder name to the right slot in `PARTS` at the top of `scripts/make-parts.py`, and run it:
    ```bash
    blender -b --python scripts/make-parts.py -- client/assets/parts
    ```
-   (`--only top=<name>` exports just one part, for testing.) Then re-fit the animations as above.
+   (`--only top=<name>` exports just one part, for testing, and leaves `body.glb` alone. `--keep-missing` keeps the existing files and hide bits of parts whose pack you don't have installed, so you can add parts without every pack on hand.) The default body doesn't change, so the animations don't need re-fitting unless you change the body itself.
 3. Add a line to `PARTS` in `shared/parts.js`, e.g. `{ id: "top_mesh", name: "Mesh top", slot: "top", bodies: ["female", "male"], tier: "free", file: "<name>", tint: false }`. Ids are lowercase (`a-z 0-9 _ -`, up to 32 characters) and unique across parts, characters and accessories; `file` can be longer.
 4. Restart the server (it prints the part list at startup) and refresh. Palettes are append-only: recipes store color numbers, so reordering a palette recolors everyone.
 
@@ -322,7 +380,7 @@ The code works without any part files. If a body's `body.glb` is missing, player
 Each character has `tier: "free"` or `tier: "premium"` in `shared/characters.js`. Premium is cosmetic only: everyone can walk around, hang out, crew up and do quests no matter what they look like.
 
 - The picker shows premium looks with a lock note. Players can preview them, but the **server** decides who actually gets one (`server/entitlements.js`), so it can't be unlocked by tinkering in the browser.
-- Premium looks, accessories and character parts are unlocked **per account**: `npm run account -- unlock <username> <id>` (e.g. `bigvegas`, `wings`, `hair_afro`) (there are no payments yet, so this is how you grant one; a payment would later call the same thing). To unlock everything while testing, start the server with `FV_UNLOCK_ALL=1 npm start` (Windows: `set FV_UNLOCK_ALL=1 && npm start`).
+- Premium looks, accessories and character parts are unlocked **per account**: bought with credits in the 🪙 Shop, or granted with `npm run account -- unlock <username> <id>` (e.g. `bigvegas`, `wings`, `hair_afro`) (there are no payments yet, so this is how you grant one; a payment would later call the same thing). To unlock everything while testing, start the server with `FV_UNLOCK_ALL=1 npm start` (Windows: `set FV_UNLOCK_ALL=1 && npm start`).
 - When payments come, `server/entitlements.js` is the one place to check a player's purchases (`canUseLook()`, `canUseAccessory()`, `canUsePart()`).
 
 ### Accessories
@@ -330,7 +388,7 @@ Each character has `tier: "free"` or `tier: "premium"` in `shared/characters.js`
 Players can top any character with cosmetic accessories on the join screen — tap the chips under **Accessories**. They animate with the character and everyone sees them. One per slot (head, face, back, hand); picking a second in a slot swaps it.
 
 - **Free:** baseball cap, flower crown, sunglasses, glow stick.
-- **Premium:** top hat, halo, heart glasses, fairy wings — unlocked per account, the same way as premium characters:
+- **Premium:** top hat, halo, heart glasses, shutter shades, festival totem, fairy wings. Buy them with credits in the 🪙 Shop, or unlock them per account the same way as premium characters:
   ```bash
   npm run account -- unlock <username> wings      # also: tophat, halo, heartglasses
   ```
@@ -376,7 +434,7 @@ Quest givers can wear any character too: set `look` on each giver in `shared/que
 - Other players are smoothed between server updates so they don't jitter.
 - `WORLD_HALF_SIZE` in `shared/sim.js` sets the map size (currently 200 × 200 meters); `WALK_LIMIT` keeps players inside the fence. Walking is 3 m/s and running 6.5 m/s.
 - Quest rules run only on the server using the server's own positions, so nobody can fake finding an item or standing on a marker.
-- Animations aren't sent over the network. Each browser works out Idle / Walk / Run from how fast a player is moving, so it costs no extra bandwidth. Only the dance emote is synced.
+- Animations aren't sent over the network. Each browser works out Idle / Walk / Run from how fast a player is moving, so it costs no extra bandwidth. Only the emote is synced (`emote` and `emoteSeq` in `server/schema.js`; see `shared/emotes.js`).
 
 ## Next
 

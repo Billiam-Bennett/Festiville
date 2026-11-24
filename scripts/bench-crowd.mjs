@@ -63,6 +63,7 @@ if (opt("lineup", null)) {
   await page.screenshot({ path: file });
   console.log("saved", file);
   if (result.error) console.log(result.error);
+  if (result.layers?.length && args.includes("--layers")) console.log(result.layers.join("\n"));
   if (errors.length) console.log(errors.join("\n"));
 } else {
   const rows = [];

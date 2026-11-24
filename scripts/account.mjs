@@ -5,6 +5,9 @@
 //   npm run account -- unlock <username> <look>          give a premium look (e.g. bigvegas), accessory
 //                                                        (e.g. wings) or character part (e.g. hair_afro)
 //   npm run account -- lock <username> <look>            take it away again
+//   npm run account -- credits <username>                balance and recent credit history
+//   npm run account -- credits <username> +500 [note]    give credits (e.g. they bought a pack); -200 takes some away
+//   npm run account -- camp-release <username>           take back their camp spot (no refund)
 //   npm run account -- reset-password <username> <new password>   also signs them out everywhere
 //   npm run account -- sign-out <username>               end all their sign-ins
 //
@@ -20,9 +23,11 @@
 //   npm run account -- close-report <report id>
 //   npm run account -- history <username>                reports about them and staff actions on them
 import { AccountStore } from "../server/accounts.js";
-import { CHARACTERS, lookById } from "../shared/characters.js";
-import { ACCESSORIES, accessoryById } from "../shared/accessories.js";
-import { PARTS, partById } from "../shared/parts.js";
+import { CHARACTERS } from "../shared/characters.js";
+import { ACCESSORIES } from "../shared/accessories.js";
+import { PARTS } from "../shared/parts.js";
+import { unlockableById } from "../server/shop.js";
+import { CampStore } from "../server/camps.js";
 import { ModerationStore, REASONS, untilText } from "../server/moderation.js";
 
 const [cmd, username, arg, ...rest] = process.argv.slice(2);
@@ -30,7 +35,7 @@ const mod = new ModerationStore();
 const store = new AccountStore();
 const fail = (msg) => { console.error(msg); process.exit(1); };
 const flags = (a) => [a.role === "admin" && "ORGANIZER", a.role === "mod" && "STAFF", store.isMuted(a) && `muted ${untilText(a.mutedUntil)}`, store.isBanned(a) && `BANNED ${untilText(a.bannedUntil)}`].filter(Boolean).join(", ");
-const show = (a) => console.log(`${a.username.padEnd(18)} badges: ${a.badges.join(", ") || "-"}   unlocked: ${a.unlocks.join(", ") || "-"}   last look: ${a.recipe ? "parts " + a.recipe : a.look || "-"}   joined: ${a.createdAt.slice(0, 10)}${flags(a) ? "   [" + flags(a) + "]" : ""}`);
+const show = (a) => console.log(`${a.username.padEnd(18)} badges: ${a.badges.join(", ") || "-"}   unlocked: ${a.unlocks.join(", ") || "-"}   credits: ${store.balance(a)}   last look: ${a.recipe ? "parts " + a.recipe : a.look || "-"}   joined: ${a.createdAt.slice(0, 10)}${flags(a) ? "   [" + flags(a) + "]" : ""}`);
 // "30" -> 30 (minutes or days), "forever" -> 0
 const amount = (v, what) => {
   if (v === "forever") return 0;
@@ -44,7 +49,6 @@ const printReport = (r) => {
   if (r.chat.length) for (const l of r.chat) console.log(`    ${l.at.slice(11, 16)} [${l.channel}] ${r.target.name}: ${l.text}`);
   else console.log("    (no recent chat from them)");
 };
-const unlockableById = (id) => lookById(id) || accessoryById(id) || partById(id);   // same as server/entitlements.js
 const need = () => store.findByName(username) ?? fail(`No account called "${username}".`);
 
 switch (cmd) {
@@ -64,6 +68,25 @@ switch (cmd) {
     if (item.tier !== "premium") fail(`${item.name} is already free for everyone.`);
     store[cmd](username, item.id);
     console.log(`${cmd === "unlock" ? "Unlocked" : "Locked"} ${item.name} for ${username}. They'll see it next time they join.`);
+    break;
+  }
+  case "credits": {
+    const a = need();
+    if (arg) {
+      if (!/^[+-]\d+$/.test(arg)) fail('Give an amount like +500 or -200.');
+      const out = store.changeCredits(a.id, Number(arg), `console${rest.length ? ": " + rest.join(" ") : ""}`);
+      if (out.error) fail(out.error);
+      console.log(`${a.username} now has ${out.balance} credits. They'll see it next time they open the 🪙 Shop.`);
+    } else {
+      console.log(`${a.username} has ${store.balance(a)} credits.`);
+      for (const l of store.ledgerFor(a.id)) console.log(`  ${l.at.slice(0, 16).replace("T", " ")} UTC  ${l.delta > 0 ? "+" : ""}${l.delta}  → ${l.balance}   ${l.reason}`);
+    }
+    break;
+  }
+  case "camp-release": {
+    const a = need();
+    if (!new CampStore().release(a.id)) fail(`${a.username} doesn't have a camp.`);
+    console.log(`Released ${a.username}'s camp spot. It disappears from the festival within a few seconds.`);
     break;
   }
   case "reset-password": {
@@ -123,6 +146,7 @@ switch (cmd) {
   }
   default:
     console.log("Usage: npm run account -- list | info <user> | unlock <user> <look> | lock <user> <look> | reset-password <user> <password> | sign-out <user>");
+    console.log("       credits: credits <user> [+N|-N] [note] | camp-release <user>");
     console.log("       roles: make-admin <user> | make-mod <user> | remove-admin / remove-mod <user>");
     console.log("       moderation: mute <user> <minutes|forever> | unmute <user> | ban <user> <days|forever> [reason] | unban <user> | reports | close-report <id> | history <user>");
 }

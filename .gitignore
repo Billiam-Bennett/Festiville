@@ -5,3 +5,5 @@ data/
 .env
 festiville-data-*.tar.gz
 *.log
+# Downloaded animation packs used by scripts/parts-anims.mjs
+.cache/

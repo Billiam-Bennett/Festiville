@@ -9,6 +9,14 @@
         "young_asian_female": "skins/young_asian_female.webp",
         "young_african_female": "skins/young_african_female.webp"
       },
+      "shapes": [
+        "build_slim",
+        "build_heavy",
+        "build_athletic",
+        "face_round",
+        "face_angular",
+        "face_heart"
+      ],
       "parts": {
         "afro01": {
           "slot": "hair",
@@ -115,6 +123,46 @@
           "file": "toigo_fisherman_sweater.glb",
           "hideBit": 8
         },
+        "puffer_jacket": {
+          "slot": "top",
+          "file": "puffer_jacket.glb",
+          "hideBit": 9
+        },
+        "striped_shirt": {
+          "slot": "top",
+          "file": "striped_shirt.glb",
+          "hideBit": 10
+        },
+        "logo_longsleeve": {
+          "slot": "top",
+          "file": "logo_longsleeve.glb",
+          "hideBit": 11
+        },
+        "logo_tee": {
+          "slot": "top",
+          "file": "logo_tee.glb",
+          "hideBit": 12
+        },
+        "suit_jacket": {
+          "slot": "top",
+          "file": "suit_jacket.glb",
+          "hideBit": 13
+        },
+        "sport_crop": {
+          "slot": "top",
+          "file": "sport_crop.glb",
+          "hideBit": 14
+        },
+        "crude_lab_coat_open_female": {
+          "slot": "top",
+          "file": "crude_lab_coat_open_female.glb",
+          "hideBit": 15
+        },
+        "male_crude_labcoat": {
+          "slot": "top",
+          "file": "male_crude_labcoat.glb",
+          "hideBit": 16
+        },
         "cortu_jeans_shorts": {
           "slot": "bottom",
           "file": "cortu_jeans_shorts.glb",
@@ -149,6 +197,26 @@
           "slot": "bottom",
           "file": "toigo_long_full_skirt.glb",
           "hideBit": 6
+        },
+        "jeans": {
+          "slot": "bottom",
+          "file": "jeans.glb",
+          "hideBit": 7
+        },
+        "pencil_skirt": {
+          "slot": "bottom",
+          "file": "pencil_skirt.glb",
+          "hideBit": 8
+        },
+        "leggings": {
+          "slot": "bottom",
+          "file": "leggings.glb",
+          "hideBit": 9
+        },
+        "belted_shorts": {
+          "slot": "bottom",
+          "file": "belted_shorts.glb",
+          "hideBit": 10
         },
         "shoes01": {
           "slot": "shoes",
@@ -204,6 +272,41 @@
           "slot": "shoes",
           "file": "culturalibre_male_boots.glb",
           "hideBit": 10
+        },
+        "fedora01": {
+          "slot": "accessory",
+          "file": "fedora01.glb",
+          "hideBit": 0
+        },
+        "fedora_cocked": {
+          "slot": "accessory",
+          "file": "fedora_cocked.glb",
+          "hideBit": 1
+        },
+        "crude_hat": {
+          "slot": "accessory",
+          "file": "crude_hat.glb",
+          "hideBit": 2
+        },
+        "crude_lab_glasses": {
+          "slot": "accessory",
+          "file": "crude_lab_glasses.glb",
+          "hideBit": 3
+        },
+        "crude_theater_mask": {
+          "slot": "accessory",
+          "file": "crude_theater_mask.glb",
+          "hideBit": 4
+        },
+        "crude_gloves": {
+          "slot": "accessory",
+          "file": "crude_gloves.glb",
+          "hideBit": 5
+        },
+        "crude_long_gloves": {
+          "slot": "accessory",
+          "file": "crude_long_gloves.glb",
+          "hideBit": 6
         }
       }
     },
@@ -214,6 +317,14 @@
         "young_asian_male": "skins/young_asian_male.webp",
         "young_african_male": "skins/young_african_male.webp"
       },
+      "shapes": [
+        "build_slim",
+        "build_heavy",
+        "build_athletic",
+        "face_round",
+        "face_angular",
+        "face_heart"
+      ],
       "parts": {
         "afro01": {
           "slot": "hair",
@@ -320,6 +431,46 @@
           "file": "toigo_fisherman_sweater.glb",
           "hideBit": 8
         },
+        "puffer_jacket": {
+          "slot": "top",
+          "file": "puffer_jacket.glb",
+          "hideBit": 9
+        },
+        "striped_shirt": {
+          "slot": "top",
+          "file": "striped_shirt.glb",
+          "hideBit": 10
+        },
+        "logo_longsleeve": {
+          "slot": "top",
+          "file": "logo_longsleeve.glb",
+          "hideBit": 11
+        },
+        "logo_tee": {
+          "slot": "top",
+          "file": "logo_tee.glb",
+          "hideBit": 12
+        },
+        "suit_jacket": {
+          "slot": "top",
+          "file": "suit_jacket.glb",
+          "hideBit": 13
+        },
+        "sport_crop": {
+          "slot": "top",
+          "file": "sport_crop.glb",
+          "hideBit": 14
+        },
+        "crude_lab_coat_open_female": {
+          "slot": "top",
+          "file": "crude_lab_coat_open_female.glb",
+          "hideBit": 15
+        },
+        "male_crude_labcoat": {
+          "slot": "top",
+          "file": "male_crude_labcoat.glb",
+          "hideBit": 16
+        },
         "cortu_jeans_shorts": {
           "slot": "bottom",
           "file": "cortu_jeans_shorts.glb",
@@ -354,6 +505,26 @@
           "slot": "bottom",
           "file": "toigo_long_full_skirt.glb",
           "hideBit": 6
+        },
+        "jeans": {
+          "slot": "bottom",
+          "file": "jeans.glb",
+          "hideBit": 7
+        },
+        "pencil_skirt": {
+          "slot": "bottom",
+          "file": "pencil_skirt.glb",
+          "hideBit": 8
+        },
+        "leggings": {
+          "slot": "bottom",
+          "file": "leggings.glb",
+          "hideBit": 9
+        },
+        "belted_shorts": {
+          "slot": "bottom",
+          "file": "belted_shorts.glb",
+          "hideBit": 10
         },
         "shoes01": {
           "slot": "shoes",
@@ -409,6 +580,41 @@
           "slot": "shoes",
           "file": "culturalibre_male_boots.glb",
           "hideBit": 10
+        },
+        "fedora01": {
+          "slot": "accessory",
+          "file": "fedora01.glb",
+          "hideBit": 0
+        },
+        "fedora_cocked": {
+          "slot": "accessory",
+          "file": "fedora_cocked.glb",
+          "hideBit": 1
+        },
+        "crude_hat": {
+          "slot": "accessory",
+          "file": "crude_hat.glb",
+          "hideBit": 2
+        },
+        "crude_lab_glasses": {
+          "slot": "accessory",
+          "file": "crude_lab_glasses.glb",
+          "hideBit": 3
+        },
+        "crude_theater_mask": {
+          "slot": "accessory",
+          "file": "crude_theater_mask.glb",
+          "hideBit": 4
+        },
+        "crude_gloves": {
+          "slot": "accessory",
+          "file": "crude_gloves.glb",
+          "hideBit": 5
+        },
+        "crude_long_gloves": {
+          "slot": "accessory",
+          "file": "crude_long_gloves.glb",
+          "hideBit": 6
         }
       }
     }

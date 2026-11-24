@@ -66,10 +66,12 @@ export function bodyHiddenFlags(geometry, bits, slots) {
 // Spatial hash over the body's vertices, for "which bit of skin is this garment vertex over?".
 export function bodyGrid(positions, cell = 0.04) {
   const cells = new Map();
-  const key = (x, y, z) => `${x},${y},${z}`;
+  const key = (x, y, z) => ((x + 1024) * 2048 + (y + 1024)) * 2048 + (z + 1024);   // numeric: much faster than strings
   const n = positions.count;
+  const P = new Float32Array(n * 3);   // flat copy: much faster to scan than getX()
+  for (let i = 0; i < n; i++) { P[i * 3] = positions.getX(i); P[i * 3 + 1] = positions.getY(i); P[i * 3 + 2] = positions.getZ(i); }
   for (let i = 0; i < n; i++) {
-    const k = key(Math.floor(positions.getX(i) / cell), Math.floor(positions.getY(i) / cell), Math.floor(positions.getZ(i) / cell));
+    const k = key(Math.floor(P[i * 3] / cell), Math.floor(P[i * 3 + 1] / cell), Math.floor(P[i * 3 + 2] / cell));
     let list = cells.get(k);
     if (!list) cells.set(k, (list = []));
     list.push(i);
@@ -79,14 +81,16 @@ export function bodyGrid(positions, cell = 0.04) {
     const cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
     let best = -1, bestD = Infinity;
     for (let r = 0; r <= maxRings; r++) {
-      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) !== r) continue;   // shell only
-        const list = cells.get(key(cx + dx, cy + dy, cz + dz));
-        if (!list) continue;
-        for (const i of list) {
-          const ex = positions.getX(i) - x, ey = positions.getY(i) - y, ez = positions.getZ(i) - z;
-          const d = ex * ex + ey * ey + ez * ez;
-          if (d < bestD) { bestD = d; best = i; }
+      for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
+        const side = dx === -r || dx === r || dy === -r || dy === r;
+        for (let dz = -r; dz <= r; dz += side || r === 0 ? 1 : 2 * r) {   // shell only: inner columns just their two ends
+          const list = cells.get(key(cx + dx, cy + dy, cz + dz));
+          if (!list) continue;
+          for (const i of list) {
+            const ex = P[i * 3] - x, ey = P[i * 3 + 1] - y, ez = P[i * 3 + 2] - z;
+            const d = ex * ex + ey * ey + ez * ez;
+            if (d < bestD) { bestD = d; best = i; }
+          }
         }
       }
       // Anything in a further shell is at least r * cell away.
@@ -301,4 +305,92 @@ export function mergePieces(THREE, pieces) {
   g.setAttribute("skinWeight", new THREE.BufferAttribute(sw, 4));
   g.setIndex(new THREE.BufferAttribute(verts > 65535 ? Uint32Array.from(index) : Uint16Array.from(index), 1));
   return g;
+}
+
+// ---------- Coverage from geometry ----------
+
+// Which body vertices a garment covers, worked out from the meshes themselves: a vertex is covered when
+// the ray from just under the skin out along the skin's normal hits one of the garment's triangles within
+// `reach` meters. Used for parts whose hide mask in body.glb is empty (see client/avatar.js). Bind space.
+// Returns a Uint8Array (1 = covered) over the body's vertices.
+export function rayCoverage(skinGeometry, garments, { reach = 0.06, back = 0.01, cell = 0.03 } = {}) {
+  // Garment triangles into a grid by bounding box.
+  const tris = [];
+  for (const g of garments) {
+    const p = g.attributes.position;
+    const idx = triangles(g);
+    for (let t = 0; t < idx.length; t += 3) {
+      const v = [];
+      for (let k = 0; k < 3; k++) v.push(p.getX(idx[t + k]), p.getY(idx[t + k]), p.getZ(idx[t + k]));
+      tris.push(v);
+    }
+  }
+  const grid = new Map();
+  const key = (x, y, z) => `${x},${y},${z}`;
+  tris.forEach((v, id) => {
+    const lo = [0, 1, 2].map((a) => Math.floor(Math.min(v[a], v[a + 3], v[a + 6]) / cell));
+    const hi = [0, 1, 2].map((a) => Math.floor(Math.max(v[a], v[a + 3], v[a + 6]) / cell));
+    for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++) {
+      const k = key(x, y, z);
+      let list = grid.get(k);
+      if (!list) grid.set(k, (list = []));
+      list.push(id);
+    }
+  });
+  const pos = skinGeometry.attributes.position, nor = skinGeometry.attributes.normal;
+  const out = new Uint8Array(pos.count);
+  if (!nor || !tris.length) return out;
+  const stamp = new Int32Array(tris.length).fill(-1);
+  const len = reach + back, steps = Math.ceil(len / (cell * 0.5));
+  for (let i = 0; i < pos.count; i++) {
+    let nx = nor.getX(i), ny = nor.getY(i), nz = nor.getZ(i);
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nx /= l; ny /= l; nz /= l;
+    const ox = pos.getX(i) - nx * back, oy = pos.getY(i) - ny * back, oz = pos.getZ(i) - nz * back;
+    hit: for (let s = 0; s <= steps; s++) {
+      const d = (len * s) / steps;
+      const list = grid.get(key(Math.floor((ox + nx * d) / cell), Math.floor((oy + ny * d) / cell), Math.floor((oz + nz * d) / cell)));
+      if (!list) continue;
+      for (const id of list) {
+        if (stamp[id] === i) continue;
+        stamp[id] = i;
+        const t = rayTriangle(ox, oy, oz, nx, ny, nz, tris[id]);
+        if (t >= 0 && t <= len) { out[i] = 1; break hit; }
+      }
+    }
+  }
+  return out;
+}
+
+// Möller–Trumbore: distance along the ray to triangle v (9 numbers), or -1. Both sides count.
+function rayTriangle(ox, oy, oz, dx, dy, dz, v) {
+  const e1x = v[3] - v[0], e1y = v[4] - v[1], e1z = v[5] - v[2];
+  const e2x = v[6] - v[0], e2y = v[7] - v[1], e2z = v[8] - v[2];
+  const px = dy * e2z - dz * e2y, py = dz * e2x - dx * e2z, pz = dx * e2y - dy * e2x;
+  const det = e1x * px + e1y * py + e1z * pz;
+  if (Math.abs(det) < 1e-12) return -1;
+  const inv = 1 / det;
+  const tx = ox - v[0], ty = oy - v[1], tz = oz - v[2];
+  const u = (tx * px + ty * py + tz * pz) * inv;
+  if (u < 0 || u > 1) return -1;
+  const qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+  const w = (dx * qx + dy * qy + dz * qz) * inv;
+  if (w < 0 || u + w > 1) return -1;
+  return (e2x * qx + e2y * qy + e2z * qz) * inv;
+}
+
+// Shrink a per-vertex 0/1 mask over `geometry` by `steps` edges: a vertex stays set only if every
+// neighbour is set. Returns a new Uint8Array.
+export function erode(geometry, flags, steps) {
+  const idx = triangles(geometry);
+  let cur = flags;
+  for (let s = 0; s < steps; s++) {
+    const next = Uint8Array.from(cur);
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+      if (!(cur[a] && cur[b] && cur[c])) { next[a] = 0; next[b] = 0; next[c] = 0; }
+    }
+    cur = next;
+  }
+  return cur;
 }

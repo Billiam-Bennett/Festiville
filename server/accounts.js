@@ -4,14 +4,17 @@
 // Saved in data/ (FV_DATA_DIR to move it), next to the vendor files:
 //   accounts.json   one entry per player. Passwords are stored ONLY as scrypt hashes with a random salt.
 //   sessions.json   sign-in sessions, keyed by a SHA-256 hash of the session token (never the token itself).
+//   credits-ledger.jsonl   every credit earned or spent, one JSON line each (append-only audit trail;
+//                   the balance itself lives on the account).
 // JSON files are fine for a few thousand players; move to a real database (SQLite/Postgres) behind
 // these same methods before a big launch.
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, statSync, appendFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { FOREVER, untilText } from "./moderation.js";
+import { STARTING_CREDITS, FREE_CAMP_ITEMS } from "../shared/economy.js";
 
 const scrypt = promisify(scryptCb);
 const DEFAULT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "data");
@@ -41,6 +44,7 @@ export class AccountStore {
   constructor({ dir = process.env.FV_DATA_DIR || DEFAULT_DIR, now = () => Date.now() } = {}) {
     this.file = join(dir, "accounts.json");
     this.sessionsFile = join(dir, "sessions.json");
+    this.ledgerFile = join(dir, "credits-ledger.jsonl");
     this.now = now;
     this.load();
     this.pruneSessions();
@@ -71,10 +75,12 @@ export class AccountStore {
       id, username, createdAt: new Date(this.now()).toISOString(),
       password: { salt: salt.toString("base64"), hash: hash.toString("base64") },
       badges: [], look: "", recipe: "", unlocks: [], accessories: [],
+      credits: STARTING_CREDITS, campItems: [],
     };
     this.accounts[id] = account;
     this.byName.set(username.toLowerCase(), id);
     this.save();
+    this.ledger(account, STARTING_CREDITS, "welcome", STARTING_CREDITS);
     return { account: this.public(account), token: this.newSession(id) };
   }
 
@@ -189,6 +195,61 @@ export class AccountStore {
     return true;
   }
 
+  // Grant an unlock by account id (the shop uses this after taking the credits).
+  grant(id, unlockId) {
+    this.refresh();
+    const a = this.accounts[id];
+    if (!a) return false;
+    if (!a.unlocks.includes(unlockId)) { a.unlocks.push(unlockId); this.save(); }
+    return true;
+  }
+
+  // ---------- Credits ----------
+  // Accounts made before credits existed start with the welcome amount the first time we look.
+  balance(a) { return Number.isInteger(a?.credits) ? a.credits : STARTING_CREDITS; }
+
+  // Add (delta > 0) or take (delta < 0) credits. Never goes below zero. Every change is written to
+  // the ledger with a reason ("quest:lostfound", "buy:wings", "pack:pack_small", "console", …).
+  // Returns { balance } or { error }.
+  changeCredits(id, delta, reason, extra = {}) {
+    this.refresh();
+    const a = this.accounts[id];
+    if (!a) return { error: "No such player." };
+    if (!Number.isSafeInteger(delta) || Math.abs(delta) > 10_000_000) return { error: "That's not a valid amount." };
+    const have = this.balance(a);
+    if (have + delta < 0) return { error: `That costs ${-delta} credits and you have ${have}.`, short: -delta - have };
+    a.credits = have + delta;
+    Object.assign(a, extra);
+    this.save();
+    this.ledger(a, delta, reason, a.credits);
+    return { balance: a.credits };
+  }
+
+  ledger(a, delta, reason, balance) {
+    try {
+      mkdirSync(dirname(this.ledgerFile), { recursive: true });
+      appendFileSync(this.ledgerFile, JSON.stringify({ at: new Date(this.now()).toISOString(), account: a.id, user: a.username, delta, balance, reason }) + "\n");
+    } catch (err) { console.error(`Couldn't write the credits ledger: ${err.message}`); }
+  }
+
+  // The last few ledger lines for one account (for `npm run account -- credits <user>`).
+  ledgerFor(id, limit = 20) {
+    try {
+      return readFileSync(this.ledgerFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((l) => l.account === id).slice(-limit);
+    } catch { return []; }
+  }
+
+  // Camp items this player owns (the free ones are always included).
+  campItems(a) { return [...new Set([...FREE_CAMP_ITEMS, ...(a?.campItems ?? [])])]; }
+  addCampItem(id, itemId) {
+    this.refresh();
+    const a = this.accounts[id];
+    if (!a) return false;
+    a.campItems ??= [];
+    if (!a.campItems.includes(itemId)) { a.campItems.push(itemId); this.save(); }
+    return true;
+  }
+
   // ---------- Moderation ----------
   // Staff ("mod") can mute, kick and ban from the player card in-game. Set with `npm run account -- make-mod`.
   // Roles: "mod" = festival staff (moderation). "admin" = organizer: moderation plus the festival builder.
@@ -227,6 +288,7 @@ export class AccountStore {
       role: a.role ?? "", mutedUntil: this.isMuted(a) ? a.mutedUntil : 0,
       accessories: [...(a.accessories ?? [])],
       recipe: a.recipe ?? "",
+      credits: this.balance(a), campItems: this.campItems(a),
     };
   }
 

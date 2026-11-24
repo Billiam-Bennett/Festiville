@@ -92,7 +92,11 @@ async function lineup() {
     a.userData.animate(1, speed, pose === "dance" ? "dance" : "");   // finish the cross-fade into the pose
     a.userData.animate(at, speed, pose === "dance" ? "dance" : "");
   });
-  const focus = { full: [0.9, 2.6], legs: [0.35, 1.3], torso: [1.15, 1.2], head: [1.55, 0.7] }[q.get("focus") ?? "full"];
+  if (q.get("hideMesh")) {   // debugging: hide meshes whose name matches (e.g. one garment, to see what's under it)
+    const re = new RegExp(q.get("hideMesh"), "i");
+    for (const a of avatars) a?.traverse((o) => { if (o.isMesh && re.test(o.name)) o.visible = false; });
+  }
+  const focus = { full: [0.9, 2.6], legs: [0.35, 1.3], torso: [1.15, 1.2], head: [1.55, 0.7], hem: [0.95, 0.35], hands: [0.85, 0.45], feet: [0.15, 0.6] }[q.get("focus") ?? "full"];
   const dist = focus[1] + recipes.length * 0.35;
   const dir = { front: [0, 1], back: [0, -1], side: [1, 0], three: [0.7, 0.7] }[q.get("cam") ?? "front"];
   camera.position.set(dir[0] * dist, focus[0] + 0.15, dir[1] * dist);
@@ -100,6 +104,7 @@ async function lineup() {
   renderer.render(scene, camera);
   out.done = true;
   hud.textContent = recipes.join("\n");
+  out.layers = kit.layers?.();
 }
 
 // ---------- Crowd ----------
@@ -164,7 +169,7 @@ async function crowd() {
       }
       w.a.userData.animate(dt, speed, w.emote);
     }
-    if (num("update", 1)) kit.update?.(camera);
+    if (num("update", 1)) kit.update?.(camera, scene);
     const u1 = performance.now();
     renderer.info.reset();
     renderer.render(scene, camera);

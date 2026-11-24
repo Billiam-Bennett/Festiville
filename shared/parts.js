@@ -1,5 +1,5 @@
-// Parts-based characters: players build their own look from a base body plus hair, eyebrows and
-// clothes. Shared so the server can check a player's recipe (server/entitlements.js) and the
+// Parts-based characters: players build their own look from a base body (with a build, face and
+// height) plus hair, eyebrows, clothes and an accessory. Shared so the server can check a player's recipe (server/entitlements.js) and the
 // browser can build it (client/avatar.js) and offer it in the picker (client/look-builder.js).
 //
 // The art comes from MakeHuman (MPFB in Blender, CC0 assets). Every file is rigged to ONE shared
@@ -11,6 +11,9 @@
 //   client/assets/parts/<body>/anims.json     the body's animations (Idle, Walk, Run, optional Dance), shared by
 //                                             every part combination; written by `npm run retarget` (see scripts/retarget.mjs)
 //   client/assets/parts/manifest.json         written by scripts/make-parts.py: each part's slot and hide bit
+// body.glb also holds the body SHAPES (BUILDS and FACES below) as morph targets named "build_<id>" and
+// "face_<id>"; the game bakes the chosen ones into the body and refits the parts to match, so parts are
+// exported once per body, never per shape.
 // <body> is "female" or "male". A part is exported once per body it supports (listed in `bodies`).
 //
 // TO ADD A PART: export it from Blender as client/assets/parts/<body>/<id>.glb for each body,
@@ -44,6 +47,40 @@ export const CLOTH_COLORS = [
   "#f4f1ea", "#22222a", "#ff4fa3", "#ffd36b", "#5ad1ff", "#7ee081", "#9b7bff", "#ff7a3d", "#3a5ba0", "#8a6a4f",
 ];
 
+// Body shapes. A recipe stores each by id (build=heavy); the first entry of each list is the default
+// and is left out of the recipe, so recipes made before shapes existed still mean the same thing.
+// Builds and faces are morph targets in body.glb ("build_slim", "face_round", … made by SHAPES in
+// scripts/make-parts.py); height just scales the whole avatar. To add one: add it to SHAPES there,
+// re-run the script, then add it here. Only ever ADD entries (ids are stored in saved recipes).
+export const BUILDS = [
+  { id: "average",  name: "Average" },
+  { id: "slim",     name: "Slim" },
+  { id: "heavy",    name: "Heavy" },
+  { id: "athletic", name: "Athletic" },
+];
+export const FACES = [
+  { id: "classic", name: "Classic" },
+  { id: "round",   name: "Round" },
+  { id: "angular", name: "Angular" },
+  { id: "heart",   name: "Heart" },
+];
+export const HEIGHTS = [
+  { id: "average", name: "Average", scale: 1 },
+  { id: "short",   name: "Short",   scale: 0.94 },
+  { id: "tall",    name: "Tall",    scale: 1.06 },
+];
+// In recipe order. morph: the morph target name prefix in body.glb (none for height).
+export const SHAPE_KINDS = [
+  { id: "build",  name: "Build",  options: BUILDS,  morph: "build_" },
+  { id: "face",   name: "Face",   options: FACES,   morph: "face_" },
+  { id: "height", name: "Height", options: HEIGHTS },
+];
+export const shapeKindById = (id) => SHAPE_KINDS.find((k) => k.id === id) ?? null;
+// The body.glb morph targets a recipe's shape uses, e.g. ["build_heavy", "face_round"] (none for defaults).
+export const shapeMorphs = (shape = {}) => SHAPE_KINDS.filter((k) => k.morph && shape[k.id] && shape[k.id] !== k.options[0].id)
+  .map((k) => k.morph + shape[k.id]);
+export const heightScale = (shape = {}) => HEIGHTS.find((h) => h.id === shape.height)?.scale ?? 1;
+
 // The slots, in recipe order. required: a recipe always has one (the first free part that fits the
 // body is the default). emptyChance: how often randomRecipe() leaves an optional slot empty.
 export const PART_SLOTS = [
@@ -52,13 +89,15 @@ export const PART_SLOTS = [
   { id: "top",      name: "Top",      required: true,  colors: CLOTH_COLORS },
   { id: "bottom",   name: "Bottom",   required: true,  colors: CLOTH_COLORS },
   { id: "shoes",    name: "Shoes",    required: false, colors: CLOTH_COLORS, emptyChance: 0 },
+  { id: "accessory", name: "Accessory", required: false, colors: CLOTH_COLORS, emptyChance: 0.6 },
 ];
 
 // The catalog. Files come from scripts/make-parts.py (MakeHuman CC0 assets): `file` is the exported
 // file name in client/assets/parts/<body>/ (a string, or { female, male } when each body uses its own).
 // The first free part in each required slot (per body) is that slot's default.
 // tint: false = the part keeps its own printed colors/pattern (no swatches). Hair and eyebrows are
-// exported light grey, so they take the hair color swatches.
+// exported light grey, so they take the hair color swatches. Accessories are plain (white / grey felt)
+// and take the cloth swatches.
 const BOTH = ["female", "male"];
 export const PARTS = [
   // Hair
@@ -88,6 +127,14 @@ export const PARTS = [
   { id: "top_crop",      name: "Tube top",     slot: "top",      bodies: ["female"], tier: "free", file: "skalldyrssuppe_tube_top_funky_colors", tint: false },
   { id: "top_polo",      name: "Polo",         slot: "top",      bodies: BOTH, tier: "free",    file: "namuhekam_male_polo_shirt", tint: false },
   { id: "top_sweater",   name: "Sweater",      slot: "top",      bodies: BOTH, tier: "premium", file: "toigo_fisherman_sweater", tint: false },
+  { id: "top_puffer",    name: "Puffer jacket", slot: "top",     bodies: BOTH, tier: "free",    file: "puffer_jacket", tint: false },
+  { id: "top_striped",   name: "Striped shirt", slot: "top",     bodies: BOTH, tier: "free",    file: "striped_shirt", tint: false },
+  { id: "top_longsleeve",name: "Long-sleeve tee", slot: "top",   bodies: BOTH, tier: "free",    file: "logo_longsleeve", tint: false },
+  { id: "top_logotee",   name: "Logo tee",     slot: "top",      bodies: BOTH, tier: "free",    file: "logo_tee", tint: false },
+  { id: "top_sportcrop", name: "Sports crop",  slot: "top",      bodies: ["female"], tier: "free", file: "sport_crop", tint: false },
+  { id: "top_labcoat",   name: "Long coat",    slot: "top",      bodies: BOTH, tier: "free",    tint: false,
+    file: { female: "crude_lab_coat_open_female", male: "male_crude_labcoat" } },
+  { id: "top_suit",      name: "Suit jacket",  slot: "top",      bodies: BOTH, tier: "premium", file: "suit_jacket", tint: false },
   // Bottoms
   { id: "bottom_pants",  name: "Black pants",  slot: "bottom",   bodies: BOTH, tier: "free",    file: "toigo_wool_pants", tint: false },
   { id: "bottom_shorts", name: "Jean shorts",  slot: "bottom",   bodies: BOTH, tier: "free",    file: "cortu_jeans_shorts", tint: false },
@@ -96,6 +143,10 @@ export const PARTS = [
   { id: "bottom_ruffle", name: "Ruffle skirt", slot: "bottom",   bodies: BOTH, tier: "free",    file: "toigo_tiered_mini_skirt", tint: false },
   { id: "bottom_cargo",  name: "Cargo pants",  slot: "bottom",   bodies: BOTH, tier: "premium", file: "cortu_cargo_pants", tint: false },
   { id: "bottom_maxi",   name: "Maxi skirt",   slot: "bottom",   bodies: BOTH, tier: "premium", file: "toigo_long_full_skirt", tint: false },
+  { id: "bottom_jeans",  name: "Jeans",        slot: "bottom",   bodies: BOTH, tier: "free",    file: "jeans", tint: false },
+  { id: "bottom_leggings", name: "Leggings",   slot: "bottom",   bodies: BOTH, tier: "free",    file: "leggings", tint: false },
+  { id: "bottom_belted", name: "Belted shorts", slot: "bottom",  bodies: BOTH, tier: "free",    file: "belted_shorts", tint: false },
+  { id: "bottom_pencil", name: "Pencil skirt", slot: "bottom",   bodies: BOTH, tier: "free",    file: "pencil_skirt", tint: false },
   // Shoes
   { id: "shoes_sneakers",name: "Brown sneakers", slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes01", tint: false },
   { id: "shoes_grey",    name: "Grey sneakers",  slot: "shoes",  bodies: BOTH, tier: "free",    file: "shoes05", tint: false },
@@ -107,6 +158,14 @@ export const PARTS = [
   { id: "shoes_flats",   name: "Flats",          slot: "shoes",  bodies: BOTH, tier: "free",    file: "toigo_flats", tint: false },
   { id: "shoes_platform",name: "Go-go platforms", slot: "shoes", bodies: BOTH, tier: "premium", file: "scailman_gogo_platform_boots", tint: false },
   { id: "shoes_tall",    name: "Tall boots",     slot: "shoes",  bodies: BOTH, tier: "premium", file: "culturalibre_male_boots", tint: false },
+  // Accessories
+  { id: "acc_fedora",    name: "Fedora",         slot: "accessory", bodies: BOTH, tier: "free",    file: "fedora01" },
+  { id: "acc_fedoratilt",name: "Tilted fedora",  slot: "accessory", bodies: BOTH, tier: "free",    file: "fedora_cocked" },
+  { id: "acc_widehat",   name: "Wide-brim hat",  slot: "accessory", bodies: BOTH, tier: "free",    file: "crude_hat" },
+  { id: "acc_shades",    name: "Visor shades",   slot: "accessory", bodies: BOTH, tier: "free",    file: "crude_lab_glasses" },
+  { id: "acc_gloves",    name: "Gloves",         slot: "accessory", bodies: BOTH, tier: "free",    file: "crude_gloves" },
+  { id: "acc_mask",      name: "Masquerade mask", slot: "accessory", bodies: BOTH, tier: "premium", file: "crude_theater_mask" },
+  { id: "acc_longgloves",name: "Opera gloves",   slot: "accessory", bodies: BOTH, tier: "premium", file: "crude_long_gloves" },
 ];
 
 export const bodyById = (id) => BODIES.find((b) => b.id === id) ?? null;
@@ -130,20 +189,23 @@ export const skinHex = (i) => SKIN_TONES[i] ?? SKIN_TONES[0];
 export const partColorHex = (slot, i) => { const c = partSlotById(slot)?.colors ?? []; return c[i] ?? c[0] ?? "#ffffff"; };
 
 // ---------- Recipes ----------
-// A recipe is one short, deterministic string: body, skin tone index, then slot=part:color for each
-// filled slot, in PART_SLOTS order, joined with ";". Colors are palette indices. Empty slots are left out.
+// A recipe is one short, deterministic string: body, skin tone index, then kind=id for each non-default
+// body shape (SHAPE_KINDS order), then slot=part:color for each filled slot, in PART_SLOTS order, joined
+// with ";". Colors are palette indices. Default shapes and empty slots are left out.
 //   female;3;hair=hair_bob:4;eyebrows=brows_soft:1;top=top_tank:2;bottom=bottom_shorts:8;shoes=shoes_sneakers:0
+//   male;5;build=heavy;face=round;top=top_puffer:0;bottom=bottom_jeans:0;accessory=acc_fedora:3
 // It's what the server stores on the account and syncs to other players.
 export const MAX_RECIPE_LENGTH = 300;
 const ID = /^[a-z0-9_-]{1,32}$/;
 const index = (v, len) => { const n = Number(v); return Number.isInteger(n) && n >= 0 && n < len ? n : 0; };
 
-// Recipe string (or object) -> { body, skin, parts: { slot: { id, color } } }, or null if it isn't a
-// recipe at all. Cleans as it goes: unknown slots/parts are dropped, out-of-range colors become 0,
-// parts that don't fit the body are dropped, and required slots get their default.
+// Recipe string (or object) -> { body, skin, shape: { build, face, height }, parts: { slot: { id, color } } },
+// or null if it isn't a recipe at all. Cleans as it goes: unknown slots/parts/shapes are dropped (unknown
+// shapes become the default), out-of-range colors become 0, parts that don't fit the body are dropped, and
+// required slots get their default.
 // Does NOT check unlocks; that's the server's job (server/entitlements.js).
 export function parseRecipe(input) {
-  let body, skin, wanted = [];
+  let body, skin, wanted = [], shapes = {};
   if (typeof input === "string") {
     if (!input || input.length > MAX_RECIPE_LENGTH) return null;
     const [b, s, ...rest] = input.trim().split(";");
@@ -151,11 +213,14 @@ export function parseRecipe(input) {
     for (const tok of rest) {
       const eq = tok.indexOf("=");
       if (eq < 0) continue;
+      const key = tok.slice(0, eq).trim();
+      if (shapeKindById(key)) { shapes[key] ??= tok.slice(eq + 1).trim(); continue; }
       const [id, color] = tok.slice(eq + 1).split(":");
-      wanted.push([tok.slice(0, eq).trim(), id?.trim(), color]);
+      wanted.push([key, id?.trim(), color]);
     }
   } else if (input && typeof input === "object") {
     body = input.body; skin = input.skin;
+    if (input.shape && typeof input.shape === "object") shapes = input.shape;
     for (const [slot, v] of Object.entries(input.parts ?? {})) {
       if (typeof v === "string") wanted.push([slot, v, 0]);
       else if (v && typeof v === "object") wanted.push([slot, v.id, v.color]);
@@ -164,7 +229,11 @@ export function parseRecipe(input) {
 
   body = typeof body === "string" ? body.trim() : "";
   if (!bodyById(body)) return null;
-  const out = { body, skin: index(skin, SKIN_TONES.length), parts: {} };
+  const out = { body, skin: index(skin, SKIN_TONES.length), shape: {}, parts: {} };
+  for (const k of SHAPE_KINDS) {
+    const want = shapes[k.id];
+    out.shape[k.id] = (typeof want === "string" && k.options.find((o) => o.id === want)?.id) || k.options[0].id;
+  }
   for (const [slotId, id, color] of wanted) {
     const slot = partSlotById(slotId);
     const part = typeof id === "string" && ID.test(id) ? partById(id) : null;
@@ -179,9 +248,13 @@ export function parseRecipe(input) {
   return out;
 }
 
-// { body, skin, parts } -> canonical recipe string (assumes it's already clean; use normalizeRecipe otherwise).
+// { body, skin, shape, parts } -> canonical recipe string (assumes it's already clean; use normalizeRecipe otherwise).
 export function formatRecipe(r) {
   const bits = [r.body, String(r.skin)];
+  for (const k of SHAPE_KINDS) {
+    const v = r.shape?.[k.id];
+    if (v && v !== k.options[0].id) bits.push(`${k.id}=${v}`);
+  }
   for (const slot of PART_SLOTS) {
     const p = r.parts[slot.id];
     if (p) bits.push(`${slot.id}=${p.id}:${p.color}`);
@@ -204,13 +277,15 @@ export const recipePartIds = (recipe) => Object.values(parseRecipe(recipe)?.part
 export function randomRecipe(rng = Math.random, { body, allow = (p) => p.tier === "free" } = {}) {
   const pick = (list) => list[Math.min(list.length - 1, Math.floor(rng() * list.length))];
   const b = bodyById(body) ? body : pick(BODIES).id;
-  const r = { body: b, skin: Math.floor(rng() * SKIN_TONES.length) % SKIN_TONES.length, parts: {} };
+  const r = { body: b, skin: Math.floor(rng() * SKIN_TONES.length) % SKIN_TONES.length, shape: {}, parts: {} };
   for (const slot of PART_SLOTS) {
     const options = partsFor(b, slot.id).filter(allow);
     const skip = !slot.required && rng() < (slot.emptyChance ?? 0);
     if (!options.length || skip) continue;
     r.parts[slot.id] = { id: pick(options).id, color: Math.floor(rng() * slot.colors.length) % slot.colors.length };
   }
+  // Shapes last (so older seeds still pick the same parts). About half keep each default.
+  for (const k of SHAPE_KINDS) r.shape[k.id] = rng() < 0.5 ? k.options[0].id : pick(k.options.slice(1)).id;
   return normalizeRecipe(r);   // fills any required slot `allow` left empty
 }
 

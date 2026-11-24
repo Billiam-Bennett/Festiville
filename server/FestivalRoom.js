@@ -9,6 +9,9 @@ import { ChatSystem } from "./chat.js";
 import { accountStore } from "./accounts.js";
 import { layoutStore } from "./layout.js";
 import { moderationStore, ACTIONS, REASONS, untilText } from "./moderation.js";
+import { buy, rewardQuest } from "./shop.js";
+import { campStore, upgradeCost } from "./camps.js";
+import { plotById } from "../shared/economy.js";
 
 // Which room/connection each signed-in account is using, across all rooms in this server process.
 // Signing in somewhere new closes the older connection (close code 4100) instead of letting one
@@ -36,8 +39,7 @@ export function takeTickStats() {
   return out;
 }
 import { TICK_RATE, sanitizeInput, applyInput, randomSpawn } from "../shared/sim.js";
-
-const EMOTES = new Set(["", "dance"]);
+import { newEmoteState, startEmote, updateEmote } from "../shared/emotes.js";
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const cleanColor = (c, fallback) => (typeof c === "string" && HEX.test(c) ? c : fallback);
 
@@ -52,6 +54,7 @@ export class FestivalRoom extends Room {
     this.chat = new ChatSystem();
     this.accountOf = new Map();   // sessionId -> account id
     this.recentChat = new Map();  // sessionId -> that player's last few chat lines (evidence for reports)
+    this.emotes = new Map();      // sessionId -> emote state (shared/emotes.js); emote + emoteSeq are copied into the schema
     this.sinceBanCheck = 0;
     this.elapsed = 0;          // seconds since the room opened (NOT this.clock: Colyseus uses that name)
 
@@ -73,9 +76,12 @@ export class FestivalRoom extends Room {
       this.inputs.set(client.sessionId, input);
     });
 
+    // Emotes (shared/emotes.js): "dance", "wave", "jump", … to start one, "" to stop. Moving ends most of
+    // them, one-shots end on their own, and the server tells everyone (emote + emoteSeq in the schema).
     this.onMessage("emote", (client, name) => {
-      const p = this.state.players.get(client.sessionId);
-      if (p && EMOTES.has(name)) p.emote = name;
+      const input = this.inputs.get(client.sessionId);
+      const moving = !!input && (input.x !== 0 || input.z !== 0);
+      if (startEmote(this.emoteState(client.sessionId), name, { now: this.elapsed, moving })) this.syncEmote(client.sessionId);
     });
 
     // Change your character and accessories mid-game (the 👕 button). The browser sends a classic
@@ -87,6 +93,21 @@ export class FestivalRoom extends Room {
       if (!p || !account || !raw || typeof raw !== "object") return;
       this.applyAppearance(p, account, resolveAppearance(account, raw, { look: p.look, recipe: p.recipe, accessories: p.accessories }));
     });
+
+    // Credits and the shop. Balances only ever change here on the server (server/shop.js has the rules).
+    this.onMessage("wallet", (client) => this.sendWallet(client));
+    this.onMessage("buy", (client, id) => {
+      const account = this.account(client.sessionId);
+      if (!account) return;
+      const out = buy(accountStore(), account.id, typeof id === "string" ? id.slice(0, 40) : "");
+      client.send("toast", { text: out.error ?? out.text, error: !!out.error });
+      this.sendWallet(client);
+    });
+
+    // Your camp in the Campground: claim a spot where you stand, upgrade, move, set up items, release.
+    this.onMessage("camp", (client, raw) => this.handleCamp(client, raw && typeof raw === "object" ? raw : {}));
+    this.onMessage("camps", (client) => client.send("camps", campStore().all()));
+    this.stopCampUpdates = campStore().onChange((camp, id) => this.broadcast("camp", { id, camp }));
 
     // Chat: the server decides who hears it (nearby players, or your crew) and enforces rate limits.
     this.onMessage("chat", (client, raw) => {
@@ -144,9 +165,13 @@ export class FestivalRoom extends Room {
       const input = this.inputs.get(sessionId);
       if (!input) return;
       applyInput(player, input, dt);
-      if (player.emote && (input.x !== 0 || input.z !== 0)) player.emote = "";   // walking off ends the dance
       player.lastSeq = input.seq;
     });
+    // One-shot emotes end on time; walking off ends a dance (or stands you up).
+    for (const [id, st] of this.emotes) {
+      const input = this.inputs.get(id);
+      if (updateEmote(st, { now: this.elapsed, moving: !!input && (input.x !== 0 || input.z !== 0) })) this.syncEmote(id);
+    }
     this.quests.tick(this.positions(), this.elapsed, dt);
     this.syncQuests();
   }
@@ -184,7 +209,12 @@ export class FestivalRoom extends Room {
     });
     for (const ev of qs.drainEvents()) {
       const { to, type, ...msg } = ev;
-      this.clients.find((c) => c.sessionId === to)?.send(type, msg);
+      const client = this.clients.find((c) => c.sessionId === to);
+      // Finished a quest: pay credits (server/shop.js decides how many) and tell them their new balance.
+      const accountId = type === "questDone" && msg.success ? this.accountOf.get(to) : null;
+      if (accountId) msg.credits = rewardQuest(accountStore(), accountId, msg.questId);
+      client?.send(type, msg);
+      if (accountId && client) this.sendWallet(client);
     }
   }
 
@@ -197,6 +227,72 @@ export class FestivalRoom extends Room {
     accountStore().setLook(account.id, look);
     accountStore().setRecipe(account.id, recipe);
     accountStore().setAccessories(account.id, accessories);
+  }
+
+  // The player's own credits, what they own, and their camp (private: only sent to them).
+  sendWallet(client) {
+    const a = this.account(client.sessionId);
+    if (!a) return;
+    const store = accountStore();
+    client.send("wallet", { credits: store.balance(a), unlocks: [...a.unlocks], campItems: store.campItems(a), camp: campStore().public(a.id) });
+  }
+
+  handleCamp(client, { action, plot, items }) {
+    const a = this.account(client.sessionId);
+    const p = this.state.players.get(client.sessionId);
+    if (!a || !p) return;
+    const store = accountStore(), camps = campStore();
+    const say = (text, error = false) => client.send("toast", { text, error });
+    const mine = camps.of(a.id);
+    const owned = store.campItems(a);
+    if (action === "claim") {
+      if (mine) return say("You already have a camp. Use Move or Upgrade instead.", true);
+      const size = plotById(plot);
+      if (!size) return say("Pick a spot size.", true);
+      const why = camps.check(a.id, p.x, p.z, size.id);
+      if (why) return say(why, true);
+      const paid = store.changeCredits(a.id, -size.price, `camp:${size.id}`);
+      if (paid.error) return say(paid.error, true);
+      const out = camps.place(a.id, a.username, { x: p.x, z: p.z, plot: size.id, items: ["tent_basic"] }, owned);
+      if (out.error) { store.changeCredits(a.id, size.price, `refund:camp:${size.id}`); return say(out.error, true); }
+      say(`Your ${size.name} is yours! Set up your camp from the Camp tab.`);
+    } else if (action === "upgrade") {
+      if (!mine) return say("Claim a camp spot first.", true);
+      const cost = upgradeCost(mine.plot, plot);
+      if (cost == null) return say("Pick a bigger spot size.", true);
+      const why = camps.check(a.id, mine.x, mine.z, plot);
+      if (why) return say(`There isn't room to grow here (${why}) Move somewhere roomier first.`, true);
+      const paid = store.changeCredits(a.id, -cost, `camp:upgrade:${plot}`);
+      if (paid.error) return say(paid.error, true);
+      const out = camps.place(a.id, a.username, { x: mine.x, z: mine.z, plot, items: mine.items }, owned);
+      if (out.error) { store.changeCredits(a.id, cost, `refund:camp:upgrade:${plot}`); return say(out.error, true); }
+      say(`Upgraded to a ${plotById(plot).name}!`);
+    } else if (action === "move") {
+      if (!mine) return say("Claim a camp spot first.", true);
+      const out = camps.place(a.id, a.username, { x: p.x, z: p.z, plot: mine.plot, items: mine.items }, owned);
+      if (out.error) return say(out.error, true);
+      say("Camp moved here.");
+    } else if (action === "setup") {
+      const out = camps.setItems(a.id, items, owned);
+      if (out.error) return say(out.error, true);
+    } else if (action === "release") {
+      if (!camps.release(a.id)) return say("You don't have a camp.", true);
+      say("You packed up and gave back your spot.");
+    }
+    this.sendWallet(client);
+  }
+
+  emoteState(sessionId) {
+    let st = this.emotes.get(sessionId);
+    if (!st) { st = newEmoteState(); this.emotes.set(sessionId, st); }
+    return st;
+  }
+
+  syncEmote(sessionId) {
+    const p = this.state.players.get(sessionId), st = this.emotes.get(sessionId);
+    if (!p || !st) return;
+    if (p.emote !== st.emote) p.emote = st.emote;
+    if (p.emoteSeq !== st.emoteSeq) p.emoteSeq = st.emoteSeq;
   }
 
   account(sessionId) {
@@ -310,6 +406,7 @@ export class FestivalRoom extends Room {
   checkRestrictions() {
     accountStore().refresh();
     layoutStore().refresh();      // picks up `npm run layout -- restore` while running
+    campStore().refresh();        // picks up `npm run account -- camp-release` while running
     if (moderationStore().open().length !== lastStaffCount) notifyStaffCount();   // e.g. `npm run account -- close-report`
     this.state.players.forEach((p, sessionId) => {
       const a = this.account(sessionId);
@@ -350,6 +447,7 @@ export class FestivalRoom extends Room {
     this.quests.join(client.sessionId, p.name);
     this.quests.players.get(client.sessionId).badges = new Set(account.badges);   // saved progress
     p.badges = [...account.badges].join(",");
+    campStore().rename(account.id, account.username);
     console.log(`[festival ${this.roomId}] ${p.name} joined (${this.clients.length} online)`);
   }
 
@@ -357,6 +455,7 @@ export class FestivalRoom extends Room {
     serverStats.rooms--;
     this.stopVendorUpdates?.();
     this.stopLayoutUpdates?.();
+    this.stopCampUpdates?.();
   }
 
   onLeave(client) {
@@ -364,6 +463,7 @@ export class FestivalRoom extends Room {
     if (this.state.players.has(client.sessionId)) serverStats.players--;
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
+    this.emotes.delete(client.sessionId);
     this.quests.leave(client.sessionId);
     this.chat.leave(client.sessionId);
     this.recentChat.delete(client.sessionId);

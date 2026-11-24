@@ -1,6 +1,7 @@
 // Cosmetic accessories players can wear on top of any character (hats, glasses, glow sticks, wings…).
 // Purely for looks — they never affect gameplay. Free ones are available to everyone; premium ones
-// are unlocked on an account (npm run account -- unlock <user> <id>), same as premium characters.
+// are bought with credits in the shop (prices in shared/economy.js) or granted on an account
+// (npm run account -- unlock <user> <id>), same as premium characters.
 // The 3D shapes live in client/accessories.js; this file is the shared list the server validates against.
 
 export const SLOTS = ["head", "face", "back", "hand"];   // at most one item per slot
@@ -12,7 +13,9 @@ export const ACCESSORIES = [
   { id: "halo",        name: "Halo",          slot: "head", tier: "premium" },
   { id: "sunnies",     name: "Sunglasses",    slot: "face", tier: "free" },
   { id: "heartglasses",name: "Heart glasses", slot: "face", tier: "premium" },
+  { id: "shutters",    name: "Shutter shades",slot: "face", tier: "premium" },
   { id: "glowstick",   name: "Glow stick",    slot: "hand", tier: "free" },
+  { id: "totem",       name: "Festival totem",slot: "hand", tier: "premium" },
   { id: "wings",       name: "Fairy wings",   slot: "back", tier: "premium" },
 ];
 
